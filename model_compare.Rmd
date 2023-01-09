@@ -1,0 +1,601 @@
+---
+title: "model_compare"
+author: "Caleb Stevens cstevens5@wisc.edu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+## SET PATH
+this.wd <- "E:/wilt/"
+##
+
+library(tidyverse)
+library(sf)
+library(assertthat)
+library(mgcv)
+library(gridExtra)
+library(spatstat)
+
+rawdat.wd <- paste0(this.wd, "raw_data/")
+cleandat.wd <- paste0(this.wd, "clean_data/")
+mod.res.path <- paste0(this.wd, "models/model_obj/")
+fun.path <- paste0(this.wd, "code/functions/")
+
+```
+
+# AIC
+
+### Setup
+
+```{r}
+load_mod <- function(mod_str, cpm_bool) {
+  if(cpm_bool) {
+    return(load(paste0(mod.res.path, "cpm/", mod_str, ".Rds"), envir=globalenv()))
+  } else {
+    return(load(paste0(mod.res.path, mod_str, ".Rds"), envir=globalenv()))
+  }
+}
+load_mod_select <- function() {
+  cat(list.files(path = mod.res.path), sep="\n")
+  mod_str <- readline(prompt="\n\nModel name : \n")
+  return(load(paste0(mod.res.path, mod_str, ".Rds"), envir=globalenv()))
+}
+```
+
+### GAM
+
+```{r}
+load_mod("mod_h0A_reml", F)
+load_mod("mod_h0B_reml", F)
+load_mod("mod_alt_reml_subs", F)
+a.h01 <- AIC(mod.h0A.reml)
+a.h02 <- AIC(mod.h0B.reml)
+a.hA <- AIC(mod.alt.reml.subs)
+
+cat(paste0("\nDelta AIC 1 : " , a.h01 - a.hA))
+cat(paste0("\nDelta AIC 2 : " , a.h02 - a.hA))
+```
+### CPM
+
+```{r}
+load_mod("cpm_h0A_Cauchy_qp", T)
+load_mod("cpm_hA_Cauchy_qp", T)
+a.h01 <- AIC(cpm_h0A_Cauchy_qp)
+a.hA <- AIC(cpm_hA_Cauchy_qp)
+cat(paste0("\nDelta AIC 3 : " , a.h01 - a.hA))
+```
+
+
+# Classification Metrics
+
+### Setup
+
+```{r}
+load(paste0(cleandat.wd, "model_data/oak_dat_scale.Rds"))
+
+source(paste0(fun.path, "map_wilt.R"))
+source(paste0(fun.path, "prec_rec_fun.R"))
+source(paste0(fun.path, "compare_models.R"))
+
+load_mod <- function(mod_str, cpm_bool) {
+  if(cpm_bool) {
+    return(load(paste0(mod.res.path, "cpm/", mod_str, ".Rds"), envir=globalenv()))
+  } else {
+    return(load(paste0(mod.res.path, mod_str, ".Rds"), envir=globalenv()))
+  }
+}
+
+load_mod_select <- function() {
+  cat(list.files(path = mod.res.path), sep="\n")
+  mod_str <- readline(prompt="\n\nModel name : \n")
+  return(load(paste0(mod.res.path, mod_str, ".Rds"), envir=globalenv()))
+}
+
+mod.list.path <- paste0(this.wd, "models/model_lists/")
+mod.comp.path <- paste0(this.wd, "models/model_comp/")
+load(paste0(mod.comp.path, "test_pts_oak_tbl.Rds"))
+```
+
+### Create model testing reference tibbles
+
+```{r}
+# # all 108 test pts are in study area, but how many are in oak
+# load(paste0(cleandat.wd, "model_data/pop_dat_scale.Rds"))
+# 
+# pop.dat.scale %>% 
+#   filter(wilt_test >= 1) %>% 
+#   filter(oak == 1) %>% 
+#   summarise(ct = n())
+# # 81 are within oaks
+# 
+# mod.comp.path <- paste0(this.wd, "models/model_comp/")
+# 
+# # to filter down to just the test.pts that are within oak -
+# test.pts.pop.tbl <- pop.dat.scale %>% 
+#   filter(wilt_test >= 1) %>% 
+#   select(x, y, wilt_test) %>% 
+#   mutate(x = (x*attr(x, "scaled:scale")) + attr(x, "scaled:center"), # unscale x
+#                y = (y*attr(y, "scaled:scale")) + attr(y, "scaled:center")) %>%  # unscale y
+#   rename(wilt = wilt_test)
+# 
+# save(test.pts.pop.tbl, file=paste0(mod.comp.path, "test_pts_pop_tbl.Rds") )
+# 
+# test.pts.oak.tbl <- pop.dat.scale %>% 
+#   filter(wilt_test >= 1) %>% 
+#   filter(oak == 1) %>% 
+#   select(x, y, wilt_test) %>% 
+#   mutate(x = (x*attr(x, "scaled:scale")) + attr(x, "scaled:center"), # unscale x
+#                y = (y*attr(y, "scaled:scale")) + attr(y, "scaled:center")) %>%  # unscale y
+#   rename(wilt = wilt_test)
+# 
+# save(test.pts.oak.tbl, file=paste0(mod.comp.path, "test_pts_oak_tbl.Rds"))
+```
+
+### Compare performance between GAM models as predictive classifiers
+
+```{r}
+# load(paste0(mod.comp.path, "test_pts_oak_tbl.Rds"))
+
+# load_mod("mod_train_alt_reml") # mod.train.alt.reml
+# load_mod("mod_train_alt_gacv", F) # mod.train.alt.gacv
+# load_mod("mod_train_h0A_reml") # mod.train.h0A.reml
+# load_mod("mod_train_h0A_gacv", F) # mod.train.h0A.gacv
+# load_mod("mod_train_h0B_reml") # mod.train.h0B.reml
+# load_mod("mod_train_h0B_gacv", F) # mod.train.h0B.gacv
+
+# hp3.list <- list(ha_gacv = mod.train.alt.gacv, h0A_gacv = mod.train.h0A.gacv, h0B_gacv = mod.train.h0B.gacv)
+# hp3.list <- list(ha_reml = mod.train.alt.reml, ha_gacv = mod.train.alt.gacv, h0A_reml = mod.train.h0A.reml, h0A_gacv = mod.train.h0A.gacv, h0B_reml = mod.train.h0B.reml, h0B_gacv = mod.train.h0B.gacv)
+# save(hp3.list, file=paste0(mod.list.path, "hp3_list.Rds"))
+
+# load HP3 models
+#load(paste0(mod.list.path, "hp3_list.Rds")) # hp3.list
+# mod.comp.tbl <- compare_models(hp3.list, test.pts.oak.tbl, hp3_bool_v=rep(1,3), hp3_scale_v=rep(0,3), DEBUG_SUB=F, DEBUG=T)
+# save(mod.comp.tbl, file=paste0(this.wd, "models/model_comp/hp3_gam_comp_tbl.Rds"))
+load(paste0(mod.comp.path, "hp3_gam_comp_tbl.Rds")) # loads as mod.comp.tbl
+
+plot.comp.tbl <- mod.comp.tbl %>% 
+  pivot_wider(
+    id_cols = c(mod_name, thresh), 
+    names_from=measure, 
+    values_from = val) %>% 
+  mutate(area_surveyed_scale = area_surveyed*0.54)
+
+p1 <- plot.comp.tbl %>% 
+    ggplot(aes(x=area_surveyed_scale*100, y=recall*100, color=mod_name)) +
+    geom_line(size=0.7) +  
+    geom_point(aes(shape=mod_name), size=4) +
+    
+    scale_shape_manual(
+      name=bquote(HP^3 ~ Model),
+      values = c("h0A_gacv"= 1, "h0B_gacv"= 3, "ha_gacv"= 2),
+      labels= c(bquote(H["01"]), bquote(H["02"]), bquote(H[A]))
+    ) +
+  
+    scale_color_viridis_d(
+      name=bquote(HP^3 ~ Model), 
+      labels= c(bquote(H["01"]), bquote(H["02"]), bquote(H[A]) )
+    ) +
+    
+    labs(x="Area Surveyed (%)", y="Recall (%)") +
+  
+    theme(legend.key.size = unit(2, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.9, 0.4),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+
+```
+
+### Compare between CPMs
+
+```{r}
+#load_mod("cpm_train_h0A_Cauchy_qp", T)
+#load_mod("cpm_train_hA_Cauchy_qp", T)
+# load_mod("cpm_train_h0A_Cauchy_c2wc1", T)
+# load_mod("cpm_train_hA_Cauchy_c2_gam", T)
+# load_mod("cpm_train_hA_Cauchy_c2wc1", T)
+
+# load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+# test.pts <- st_read(paste0(cleandat.wd, "sa_points/sa_points.shp")) %>% filter(!(is.na(year)), year >= 2019)
+# 
+# # cpm.list <- list(
+# #   #h0A_qp = cpm_train_h0A_Cauchy_qp,
+# #   #hA_qp = cpm_train_hA_Cauchy_qp,
+# #   h0A_c2wc1 = cpm_train_h0A_Cauchy_c2wc1,
+# #   hA_c2_gam = cpm_train_hA_Cauchy_c2_gam,
+# #   hA_c2wc1 = cpm_train_hA_Cauchy_c2wc1)
+# 
+# #save(cpm.list, file=paste0(mod.list.path,"cpm_list.Rds"))
+# load(paste0(mod.list.path, "cpm_list.Rds"))
+# 
+# # load(paste0(mod.list.path,"cpm_list.Rds")) # cpm.list
+# # load(paste0(mod.comp.path, "test_pts_pop_tbl.Rds")) # test.pts.pop.tbl
+# 
+# cpm.comp.tbl <- compare_models(cpm.list, test.pts.pop.tbl, hp3_bool_v=rep(0,3), hp3_scale_v=rep(0,3), DEBUG_SUB=T, DEBUG=T)
+# save(cpm.comp.tbl, file=paste0(this.wd, "models/model_comp/cpm_comp_tbl.Rds"))
+# 
+
+load(paste0(mod.comp.path, "cpm_comp_tbl.Rds"))
+
+plot.comp.tbl <- cpm.comp.tbl %>% 
+  group_by(measure) %>% 
+  mutate(val_scale = val/max(val)) %>% 
+  ungroup() %>% 
+  pivot_wider(id_cols=c(mod_name, scale_thresh) , names_from = measure, values_from = val_scale) #%>% 
+  #pivot_longer(cols=recall:rel_eff,names_to = "measure", values_to="val_scale")
+
+# p0 <- plot.comp.tbl %>% 
+#   ggplot(aes(x=area_surveyed*100, y=recall*100, color=mod_name)) + 
+#     geom_line(size=1.1) + 
+#     labs(x="% Area Surveyed", y="Recall (% Cases Predicted)") +
+#     theme(title = element_text(size=32, hjust=0.5), axis.text = element_text(size=8)) +
+#   scale_color_discrete(name="Model Name") +
+#   theme(legend.key.size = unit(2, "cm"),
+#           legend.text = element_text(size=20))
+
+
+p1 <- plot.comp.tbl %>% 
+  ggplot(aes(x=area_surveyed*100, y=recall*100, color=mod_name)) + 
+    geom_line(size=0.7) +
+    geom_point(aes(shape=mod_name), size=4) +
+      
+  scale_shape_manual(
+    name="CPM Model",
+    values = c("h0A_c2wc1"= 1, "hA_c2_gam"= 3, "hA_c2wc1"= 2),
+    labels=c( bquote(H["01"]), bquote(H[A] ~ GAM), bquote(H[A] ~ Linear) )
+  ) +
+  
+  scale_color_viridis_d(
+    name="CPM Model" , 
+    option="E",
+    labels=c( bquote(H["01"]), bquote(H[A] ~ GAM), bquote(H[A] ~ Linear) ) ) +
+  
+  labs(x="Area Surveyed (%)", y="Recall (%)") +
+  
+  theme(legend.key.size = unit(2, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.8, 0.4),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+  
+  
+
+```
+
+### Compare CPM to HP3-GAM
+
+```{r}
+load_mod("mod_train_alt_gacv", F)
+load_mod("cpm_train_hA_Cauchy_c2wc1", T)
+load(paste0(mod.comp.path, "test_pts_oak_tbl.Rds"))
+load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+test.pts <- st_read(paste0(cleandat.wd, "sa_points/sa_points.shp")) %>% filter(!(is.na(year)), year >= 2019)
+
+mod.comp.list <- list(
+   hp3_gacv = mod.train.alt.gacv,
+   cpm_c2wc1 = cpm_train_hA_Cauchy_c2wc1)
+
+across.comp.tbl <- compare_models(mod.comp.list, test.pts.oak.tbl,  hp3_bool_v=c(1,0), hp3_scale_v=c(1,0), DEBUG_SUB=T, DEBUG=T)
+
+save(across.comp.tbl, file=paste0(mod.comp.path, "across_comp_tbl.Rds"))
+load(paste0(mod.comp.path, "across_comp_tbl.Rds"))
+
+plot.dat <- across.comp.tbl %>% 
+  select(-thresh) %>% 
+  filter(measure %in% c("area_surveyed", "recall")) %>% 
+  pivot_wider(id_cols = c(scale_thresh, mod_name), names_from = measure, values_from = val)
+
+# remove half of the hp3_gacv indices to prevent over-plotting
+cpm.ind <- which(plot.dat$mod_name == "cpm_c2wc1")
+hp3.ind <- which(plot.dat$mod_name == "hp3_gacv")
+ind.tmp <- hp3.ind[seq(from=1, to=300, by=2)]
+plot.dat.subs <- plot.dat[c(cpm.ind,ind.tmp), ]
+
+p1 <- plot.dat.subs %>% 
+  
+  ggplot(aes(x=area_surveyed*100, y=recall*100, color=mod_name)) +
+    geom_line(size=0.7) +
+    geom_point(aes(shape=mod_name), size=4) +
+    scale_shape_manual(
+      name=bquote(H[A] ~ Model),
+      values = c("cpm_c2wc1"= 1, "hp3_gacv"= 2),
+      labels=c(  bquote(CPM), bquote(HP^3~-GAM))
+    ) +
+  scale_color_viridis_d(
+    name=bquote(H[A] ~ Model),
+    begin=0,
+    end=0.7,
+    option="E",
+    labels=c( bquote(CPM), bquote(HP^3~-GAM)) 
+  ) +
+  labs(x="Area Surveyed (%)", y="Recall (%)") +
+  
+  theme(legend.key.size = unit(2, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.8, 0.4),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+   
+
+```
+
+# Hazard Maps
+
+### setup
+
+```{r}
+load_mod <- function(mod_str, cpm_bool) {
+  if(cpm_bool) {
+    return(load(paste0(mod.res.path, "cpm/", mod_str, ".Rds"), envir=globalenv()))
+  } else {
+    return(load(paste0(mod.res.path, mod_str, ".Rds"), envir=globalenv()))
+  }
+}
+
+plot.path <- paste0(this.wd, "figures/hazard/")
+
+```
+
+### HP3-GAM
+
+Make predictions and export them
+
+```{r}
+# load(paste0(cleandat.wd, "model_data/oak_dat_scale.Rds"))
+# load(paste0(cleandat.wd, "merge/join_cts_tbl.Rds"))
+# pred.dat <- join.cts.tbl %>% 
+#   filter(sa==1, oak==1, priv==0, water==0) %>% 
+#   select(x, y, wilt)
+# save(pred.dat, file=paste0(cleandat.wd, "pred_dat/pred_dat.Rds") )
+
+load(paste0(cleandat.wd, "pred_dat/pred_dat.Rds"))
+
+load_mod("mod_alt_gacv_subs", F)
+
+p <- predict(mod.alt.gacv.subs, type="response", se.fit=T)
+
+m.pred.tbl <- tibble(
+    pred = p$fit, 
+    se=p$se.fit, 
+    x = pred.dat$x, 
+    y = pred.dat$y, 
+    wilt= pred.dat$wilt) %>%  
+  mutate(pred = pred/max(pred),
+         confidence = 1 - se/max(se) )
+
+# p1 <- m.pred.tbl %>% 
+#   ggplot() +
+#     geom_point(aes(x=x,y=y, color=pred, alpha=1-confidence))
+
+# how many points greater than 0.2?
+m.pred.tbl %>% 
+  filter(pred > 0.4) %>%
+  summarise(count = n())
+
+# convert to points
+pred.pts <- m.pred.tbl %>% 
+  filter(pred > 0.4) %>% 
+  select(x, y, pred, se, confidence) %>% 
+  st_as_sf(coords=c("x", "y"),
+           crs=st_crs(3071))
+
+write.path <- "D:/Backed Up/Desktop/Wilt/"
+
+st_write(pred.pts, dsn=paste0(write.path, "combined_pred_pts/combined_pred_pts.shp") )
+
+
+
+```
+
+**Generate plots - might need work**
+
+```{r}
+wilt.pts <- m.pred.tbl %>% 
+  filter(wilt==1) %>% 
+  select(x, y, wilt) %>% 
+  mutate(wilt = "2004-2021")
+
+p1 <- m.pred.tbl %>% 
+  rename(hazard=pred) %>% 
+  ggplot() + 
+    geom_tile(aes(x=x,y=y,fill=hazard)) +
+    geom_point(data=wilt.pts, aes(x=x,y=y, shape=wilt), size=3, alpha=0.8, color="black") +
+    scale_fill_viridis_c(option="B", direction=-1) +
+    scale_shape_manual(values=c("2004-2021" = 4)) +
+    theme_bw() +
+    guides(fill = guide_colorbar(title="Hazard",order=1),
+          shape = guide_legend(title="Wilt", order=2)) +
+    theme(legend.key.size = unit(1, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.85, 0.3),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+
+# ggsave(filename = "hp3_haz.tif",
+#        plot = p1,
+#        device="tiff",
+#        path = plot.path,
+#        width = 900,
+#        height = 900,
+#        units = "px",
+#        dpi = 600)
+
+p2 <- m.pred.tbl %>% 
+  ggplot() + 
+    geom_tile(aes(x=x,y=y,fill=se)) +
+    geom_point(data=wilt.pts, aes(x=x,y=y, shape=wilt), size=3, alpha=0.8, color="black") +
+    scale_fill_viridis_c(option="D", direction=-1) +
+    scale_shape_manual(values=c("2004-2021" = 4)) +
+    theme_bw() +
+    guides(fill = guide_colorbar(title="Uncertainty", order=1),
+          shape = guide_legend(title="Wilt", order=2) ) +
+    theme(legend.key.size = unit(1, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.85, 0.3),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+
+# ggsave(filename = "hp3_se.tif",
+#        plot = p2,
+#        device = "tiff",
+#        path = plot.path,
+#        scale = 1,
+#        width = 900,
+#        height = 900,
+#        units = "px",
+#        dpi = 600)
+```
+
+Generate predictions from habitat model and export
+
+```{r}
+load_mod("mod_h0B_gacv_subs", F)
+p <- predict(mod.h0B.gacv.subs, type="response", se.fit=T)
+m.pred.tbl <- tibble(
+    pred = p$fit, 
+    se = p$se.fit, 
+    x = pred.dat$x, 
+    y = pred.dat$y, 
+    wilt= pred.dat$wilt) %>% 
+  mutate(pred = pred/max(pred),
+         confidence = 1 - se/max(se))
+m.pred.tbl %>% 
+  filter(pred > 0.33) %>%
+  summarise(count = n())
+pred.subs.pts <- m.pred.tbl %>% 
+  filter(pred > 0.33) %>% 
+  select(x, y, pred, se, confidence) %>% 
+  st_as_sf(coords=c("x", "y"),
+           crs=st_crs(3071))
+st_write(pred.subs.pts, dsn=paste0(write.path, "habitat_pred_pts/habitat_pred_pts.shp") )
+```
+
+
+
+### CPM
+
+```{r}
+load_mod("cpm_hA_Cauchy_c2wc1", T)
+load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+load(paste0(cleandat.wd, "model_data/im_list.Rds"))
+
+sa.pts <- st_read(paste0(cleandat.wd, "sa_points/sa_points.shp")) %>% 
+  mutate(year = "2004-2021")
+
+sa.pts.tbl <- do.call(rbind, st_geometry(sa.pts)) %>% 
+  as_tibble() %>% 
+  setNames(c("x", "y")) %>% 
+  add_column(year = "2004-2021")
+
+p <- predict.kppm(cpm_hA_Cauchy_c2wc1, locations=sa.quad$dummy, covariates=im.list, se=T)
+
+cpm.pred.tbl <- tibble(
+    pred = p$estimate, 
+    se=p$se, 
+    x=sa.quad$dummy$x, 
+    y=sa.quad$dummy$y) %>% 
+  mutate(pred = pred/max(pred, na.rm=T))
+
+p1 <- cpm.pred.tbl %>% 
+  ggplot() +
+    geom_tile(aes(x=x,y=y,fill=pred)) +
+    geom_point(data=sa.pts.tbl, aes(x=x, y=y, shape=year), size=3, alpha=0.8, color="black") +
+    scale_fill_viridis_c(option="B", direction=-1) +
+    scale_shape_manual(values=c("2004-2021" = 4)) +
+    theme_bw() +
+    guides(fill = guide_colorbar(title="Hazard",order=1),
+          shape = guide_legend(title="Wilt", order=2)) +
+    theme(legend.key.size = unit(1, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.85, 0.3),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+
+p2 <- cpm.pred.tbl %>% 
+  ggplot() +
+    geom_tile(aes(x=x,y=y,fill=se)) +
+    geom_point(data=sa.pts.tbl, aes(x=x, y=y, shape=year), size=3, alpha=0.8, color="black") +
+    scale_fill_viridis_c(option="D", direction=-1) +
+    scale_shape_manual(values=c("2004-2021" = 4)) +
+    theme_bw() + 
+    guides(fill = guide_colorbar(title="Effect SE",order=1),
+          shape = guide_legend(title="Wilt", order=2)) +
+    theme(legend.key.size = unit(1, "cm"),
+          legend.text = element_text(size=20),
+          legend.title = element_text(size=24),
+          legend.position = c(0.85, 0.3),
+          axis.text = element_text(size=18),
+          axis.title = element_text(size=24))
+
+```
+
+
+
+# Model Diagnostics
+
+## residual analysis
+
+### setup
+
+```{r}
+load_mod <- function(mod_str, is_cpm) {
+  if(is_cpm) {
+    return(load(paste0(mod.res.path, "cpm/", mod_str, ".Rds"), envir=globalenv()))
+  } else {
+    return(load(paste0(mod.res.path, mod_str, ".Rds"), envir=globalenv()))
+  }
+}
+source(paste0(fun.path, "resid_fun.R"))
+source(paste0(fun.path, "resid_plot_fun.R"))
+
+load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+sa.pts <- st_read(dsn=paste0(cleandat.wd, "sa_points/sa_points.shp"))
+```
+
+### GAM
+
+```{r}
+load_mod("mod_alt_gacv_subs", is_cpm=F) # mod.alt.gacv.subs
+load(paste0(cleandat.wd, "model_data/oak_dat_scale.Rds")) # oak.dat.scale
+
+res.tmp <- resid_fun(
+  mod=mod.alt.gacv.subs, 
+  is_kppm=0, 
+  dat_tbl=oak.dat.scale, 
+  pts_shp=sa.pts, 
+  p_slice=20, 
+  dbg=T)
+
+resid_plot_fun(res.tmp)
+
+rm(res.tmp)
+```
+
+### CPM
+
+```{r}
+# load
+load_mod("cpm_hA_Cauchy_c2wc1", is_cpm=T) # cpm_hA_Cauchy_c2_gam
+load(paste0(cleandat.wd, "model_data/pop_dat_scale.Rds")) # pop.dat.scale
+# clean
+pop.dat.sa <- pop.dat.scale %>% 
+  mutate(x= (x*attr(x, "scaled:scale"))+attr(x, "scaled:center"),
+         y = (y*attr(y, "scaled:scale"))+attr(y, "scaled:center")) %>% 
+  select(x, y, oak_prob, elev, plan_curv, ch_net_dist, bd, ph, hs, sand)
+# construct residual plots
+res.tmp <- resid_fun(
+  mod=cpm_hA_Cauchy_c2wc1, 
+  is_kppm=1, 
+  dat_tbl=pop.dat.sa, 
+  pts_shp=sa.pts, 
+  p_slice=20, 
+  dbg=T)
+# plot & arrange
+resid_plot_fun(res.tmp)
+```

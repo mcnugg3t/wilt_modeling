@@ -1,0 +1,431 @@
+---
+title: "exploratory_analysis"
+author: "Caleb Stevens cstevens5@wisc.edu"
+output: html_document
+---
+
+### Setup
+
+**Please set path to your "wilt" folder below**
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+##
+##
+this.wd <- "E:/wilt/"
+##
+##
+dat.wd <- paste0(this.wd, "clean_data/")
+library(tidyverse)
+library(sf)
+library(stars)
+library(GGally)
+library(spatstat)
+library(assertthat)
+```
+
+# Visualize Basic Attributes of Data
+
+### Distribution of Points by Year (where year recorded)
+
+```{r}
+rawdat <- paste0(this.wd, "raw_data/")
+
+wilt.pts <- st_read(paste0(rawdat, "comb_points/comb_points.shp"))
+
+ggplot() +
+  geom_sf(data=wilt.pts,
+          aes(color=year),
+          alpha=0.5)
+
+wilt.pts %>%
+  mutate(year = as.integer(year) ) %>% 
+  ggplot() + geom_histogram(aes(x=year))
+```
+
+### Training vs Testing Points plot
+
+```{r}
+
+sa.shp <- st_read(paste0(dat.wd, "sa_shp/sa.shp"))
+assert_that(st_crs(sa.shp) == st_crs(3071))
+
+plot.pts <- wilt.pts %>% 
+  mutate(year = as.integer(year)) %>% 
+  mutate(Infect_Period = if_else(condition = ( is.na(year) | year < 2018), true="pre-2018", false="2018-2021") ) %>% 
+  mutate(Infect_Period = as.factor(Infect_Period)) %>% 
+  arrange(desc(Infect_Period))
+
+plt.cls <- c("2018-2021" = "darkred", "pre-2018" = "gray")
+
+ggplot() + 
+  geom_sf(data=sa.shp, color="green") +
+  geom_sf(data=plot.pts, 
+          aes(color=Infect_Period), 
+          alpha=0.5) +
+  scale_color_manual(name="Infection Period", 
+                     values=plt.cls)
+```
+
+### Points with land cover classification
+
+```{r}
+load(paste0(dat.wd, "merge/join_cts_tbl.Rds")) # loads as full.tbl
+
+wilt.px <- join.cts.tbl %>% 
+  filter(wilt==1)
+
+plot.tbl <- join.cts.tbl %>% 
+  mutate(wl2_cls = as.factor(wl2_cls)) %>% 
+  drop_na()
+
+ggplot() + 
+  geom_tile(data=plot.tbl, aes(x=x,y=y, fill=wl2_cls)) +
+  geom_point(data=wilt.px, aes(x=x,y=y), color="black", size=0.5)
+
+```
+
+### How many Wilt points located in pixels not classified Oak?
+
+```{r}
+load(paste0(dat.wd, "model_data/pop_dat_scale.Rds"))
+
+not_oak <- pop.dat.scale %>% 
+  mutate(oak = as.factor(oak) ) %>% 
+  group_by(oak) %>% 
+  filter(oak == 0) %>% 
+  summarise(wilt_ct = sum(wilt_ct),
+            wilt_px = sum(wilt_bool),
+            total = n())
+
+oak <- pop.dat.scale %>% 
+  mutate(oak = as.factor(oak) ) %>% 
+  group_by(oak) %>% 
+  filter(oak == 1) %>% 
+  summarise(wilt_ct = sum(wilt_ct),
+            wilt_px = sum(wilt_bool),
+            total = n() )
+
+tot.wilt <- not_oak$wilt_ct + oak$wilt_ct
+wilt.px <- not_oak$wilt_px + oak$wilt_px
+tot.px <- not_oak$total + oak$total
+
+cat(paste0("\nIn full study area there are ", tot.wilt, " observations of Oak Wilt in ", wilt.px, " pixels, compared to ", tot.px, " pixels overall  = ", round( (wilt.px/tot.px)*100 , 2),"% of pixels" ))
+
+cat(paste0("\nAmong Oak forest pixels there are ", oak$wilt_ct, " observations of Oak Wilt in ", oak$wilt_px, " pixels, compared to ", oak$total, " pixels overall  = ", round((oak$wilt_px/oak$total)*100,2), "% of pixels" ))
+```
+
+
+# Measure multicollinearity and identify candidate variables to remove
+
+## Oak Pixels Only
+
+### Load & Calculate Pearson Correlation Matrix
+
+```{r}
+load(paste0(dat.wd, "model_data/oak_dat_scale.Rds")) # loads as oak.dat.scale
+oak.corr <- oak.dat.scale %>% 
+  select( !starts_with("wilt") ) %>% 
+  ggcorr()
+cat(paste0("\n", sum(oak.dat.scale$wilt_ct), " wilt points in selected study area" ) )
+cat(paste0("\n", sum(oak.dat.scale$wilt_train), " training points in selected study area" ) )
+cat(paste0("\n", sum(oak.dat.scale$wilt_test), " testing points in selected study area") )
+oak.corr
+```
+
+```{r}
+oak.full.eigen <- oak.dat.scale %>% 
+  select(!starts_with("wilt")) %>% 
+  cor() %>% 
+  eigen()
+
+oak.full.evals <- oak.full.eigen$values
+
+cat(paste0("\ncondition index : ", sqrt(max(oak.full.evals)/min(oak.full.evals))))
+```
+
+
+### Define a Subset of features
+
+```{r}
+remove.vars <- c("silt", "rsp", "ls")
+
+oak.filt <- oak.dat.scale %>% 
+  select(!starts_with("wilt")) %>% 
+  select(!all_of(remove.vars))
+
+ggcorr(oak.filt)
+```
+
+
+### Compute condition index for subset
+
+```{r}
+oak.eigen <- oak.filt %>% 
+  cor() %>% 
+  eigen()
+```
+
+$\kappa_p = $ 5.3  x, y, oak_prob, bd, ph, sand, ch_net_dist, hs, elev, slope, aspect, plan_curv
+
+***
+
+***
+
+## Full Population Data
+
+### Load Data & Calc Pearson Correlation Matrix
+
+```{r}
+load(paste0(dat.wd, "model_data/pop_dat_scale.Rds")) # loads as pop.dat.scale
+pop.corr <- pop.dat.scale %>% 
+  select( !starts_with("wilt") ) %>% 
+  ggcorr()
+cat(paste0( sum(pop.dat.scale$wilt_ct), " wilt points in full grid area"))
+pop.corr
+```
+
+```{r}
+pop.full.eigen <- pop.dat.scale %>% 
+  select(!starts_with("wilt")) %>% 
+  cor() %>% 
+  eigen()
+
+pop.full.evals <- pop.full.eigen$values
+
+cat(paste0("\ncondition index : ", sqrt(max(pop.full.evals)/min(pop.full.evals))))
+```
+
+
+### Define subset of features
+
+```{r}
+remove.vars <- c("silt", "rsp", "ls", "oak")
+
+pop.filt <- pop.dat.scale %>% 
+  select(!starts_with("wilt")) %>% 
+  select(!all_of(remove.vars))
+
+ggcorr(pop.filt)
+```
+
+### Compute condition index
+
+```{r}
+pop.eigen <- pop.filt %>% 
+  cor() %>% 
+  eigen()
+
+pop.eigvals <- pop.eigen$values
+
+cat(paste0("\ncondition index : ", sqrt(max(pop.eigvals)/min(pop.eigvals))))
+```
+$\kappa_p = $ 5.8
+
+
+# K-function analysis
+
+### read points, construct ppp & quadrature object, save all for later use
+
+```{r}
+load(paste0(dat.wd, "merge/join_cts_tbl.Rds")) # join.cts.tbl
+dummy.pts.tbl <- join.cts.tbl %>% filter(sa == 1)
+
+sa.shp <- st_read(paste0(dat.wd, "sa_shp/sa.shp")) # read study area shapefile
+assert_that(st_crs(sa.shp) == st_crs(3071)) # check crs
+
+full.pts <- st_read(paste0(dat.wd, "sa_points/sa_points.shp")) # read study area pts shapefile
+assert_that(st_crs(full.pts) == st_crs(3071)) # check crs
+
+train.pts <- full.pts %>% filter( year < 2019 | is.na(year) )
+
+full.pts.tbl <- do.call(rbind, st_geometry(full.pts)) %>% 
+  as_tibble() %>% 
+  setNames(c("x", "y")) %>% 
+  distinct()
+
+train.pts.tbl <- do.call(rbind, st_geometry(train.pts)) %>% 
+  as_tibble() %>% 
+  setNames(c("x", "y")) %>% 
+  distinct() 
+
+source(paste0(this.wd, "code/functions/sf_to_owin.R")) # load function sf_to_owin
+
+sa.owin <- sf_to_owin(sa.shp) # turn study area shapefile into spatstat::owin object
+
+full.ppp <- ppp(x=full.pts.tbl$x, y=full.pts.tbl$y, window=sa.owin) # create point pattern out of wilt points
+train.ppp <- ppp(x=train.pts.tbl$x, y=train.pts.tbl$y, window=sa.owin)
+
+dummy.ppp <- ppp(x=dummy.pts.tbl$x, y=dummy.pts.tbl$y, window=sa.owin)
+
+sa.quad <- quadscheme(data=full.ppp, dummy=dummy.ppp, method="grid")
+train.quad <- quadscheme(data=train.ppp, dummy=dummy.ppp, method="grid")
+
+save(train.quad, file=paste0(dat.wd, "model_data/train_quad.Rds"))
+save(full.ppp, file=paste0(dat.wd, "model_data/full_ppp.Rds")) # save
+save(train.ppp, file=paste0(dat.wd, "model_data/train_ppp.Rds"))
+save(sa.owin, file=paste0(dat.wd, "envelope/sa_owin.Rds"))
+save(sa.quad, file=paste0(dat.wd, "model_data/sa_quad.Rds"))
+
+```
+
+### Estimate L-function
+
+```{r}
+load(paste0(dat.wd, "model_data/full_ppp.Rds")) # as full.ppp
+Lest.result <- Lest(full.ppp, correction=c("isotropic", "translate")) %>% as_tibble() # k function
+plot(Lest.result, main="Study Area : Wilt Points L Function")
+```
+
+### Estimate K-function gradient (PCF)
+
+```{r}
+load(paste0(dat.wd, "model_data/full_ppp.Rds")) # as full.ppp
+Kest.result <- Kest(full.ppp, correction="isotropic") # estimate K-function
+Kest.grad <- pcf(Kest.result) %>% as_tibble()
+# plot
+p4 <- Kest.grad %>% 
+  ggplot(aes(x=r, y=pcf)) +
+  geom_smooth(
+    aes(color="Observed (isotropic)", linetype="Observed (isotropic)"), 
+    se=F,
+    size=1.2) +
+  geom_hline(
+    aes(color="CSR", linetype="CSR", yintercept=1), 
+    size=3) +
+  scale_color_manual(
+    name="Grad. of K",
+    values = c("Observed (isotropic)" = "red", "CSR" = "darkgray")) +
+  scale_linetype_manual(
+    name = "Grad. of K",
+    values = c("Observed (isotropic)" = "dashed", "CSR" = "solid")) +
+  labs(y="Grad. K") +
+  xlim(0,1500) +
+  ylim(0, 10) +
+  theme(
+    legend.title = element_text(size=28),
+    legend.text = element_text(size=24),
+    axis.text = element_text(size=20),
+    axis.title = element_text(size=24))
+  
+```
+
+```{r}
+csr.env.tbl <- envelope(Y=full.ppp, 
+                        fun=Kest, 
+                        funargs=list(correction="isotropic"), 
+                        nsim=99, 
+                        rank=1) %>% as_tibble()
+
+save(csr.env.tbl, file=paste0(dat.wd, "envelope/csr_env_tbl.Rds"))
+```
+
+
+```{r}
+load(paste0(dat.wd, "merge/join_cts_tbl.Rds"))
+load(paste0(dat.wd, "envelope/sa_owin.Rds"))
+
+sa.oak.tbl <- join.cts.tbl %>%
+  filter(sa == 1) %>% 
+  select(c(x, y, oak)) %>% 
+  filter(oak == 1)
+
+create_list_rand_ppp <- function(oak_pts_tbl, lamb, nsim, DEBUG) {
+  pplist <- list()
+  tbl.length <- nrow(oak_pts_tbl)
+  if(DEBUG){cat(paste0("\nGenerating random assignment among Oak Pixels: \n"))}
+  for(i in seq_len(nsim)) {
+    if(DEBUG){cat(paste0("\n", i, ": "))}
+    # generate random occurrences
+    pois.v <- rpois(tbl.length, lambda=lamb)
+    dat.tmp <- oak_pts_tbl %>% 
+      add_column(wilt_sim = pois.v) %>% 
+      filter(wilt_sim > 0)
+    pts.tmp <- tibble(x=numeric(), y=numeric())
+    # for each row in dat.tmp - wilt count is >= 1
+    for(j in seq_len(nrow(dat.tmp))) {
+      for(k in seq_len(dat.tmp$wilt_sim[j])) {
+        new.x <- dat.tmp$x[j] + runif(1, min=-15,max=15)
+        new.y <- dat.tmp$y[j] + runif(1, min=-15, max=15)
+        pts.tmp <- pts.tmp %>% add_row(x=new.x, y=new.y)
+      }
+    }
+    if(DEBUG){cat(paste0("correct number points generated : ", assert_that(nrow(pts.tmp)-sum(pois.v)<2)))}
+    pp.tmp <- ppp(pts.tmp$x, pts.tmp$y, window=sa.owin)
+    pplist[[i]] <- pp.tmp
+  }
+  return(pplist)
+}
+
+lamb.dat <- 542/328838
+oak_rand_ppp_list <- create_list_rand_ppp(sa.oak.tbl, lamb.dat, 99, T)
+
+ra.env.tbl <- envelope(Y=full.ppp, 
+                       fun=Kest, 
+                       funargs=list(correction="isotropic"), 
+                       simulate=oak_rand_ppp_list,
+                       rank=1) %>% as_tibble()
+save(ra.env.tbl, file=paste0(dat.wd, "envelope/ra_env_tbl.Rds"))
+```
+
+### Plot actual k-function vs envelopes
+
+```{r}
+load(paste0(dat.wd, "model_data/full_ppp.Rds"))
+load(paste0(dat.wd, "envelope/ra_env_tbl.Rds"))
+load(paste0(dat.wd, "envelope/csr_env_tbl.Rds"))
+
+p1 <- ra.env.tbl %>% ggplot(aes(x=r, y=obs, ymin=lo, ymax=hi)) +
+  geom_ribbon(aes(color="Random assignment", linetype='Random assignment'), alpha=0.5) +
+  geom_line(aes(color= "Observed (isotropic)", linetype="Observed (isotropic)"), size=1.5, linetype="dashed") +
+  scale_color_manual(name = "K-function",
+                     values = c('Observed (isotropic)'='red', 'Random assignment'= 'darkgray')) +
+  scale_linetype_manual(name = "K-function",
+                        values = c('Observed (isotropic)'='dashed', 'Random assignment'= 'solid')) +
+  xlim(0, 2000) +
+  ylim(0, 2.5e7) +
+  labs(y="K") +
+  theme(
+    legend.title = element_text(size=28),
+    legend.text = element_text(size=24),
+    axis.text = element_text(size=20),
+    axis.title = element_text(size=24))
+  
+p2 <- csr.env.tbl %>% ggplot(aes(x=r, y=obs, ymin=lo, ymax=hi)) +
+  geom_ribbon(aes(color="CSR", linetype="CSR"), alpha=0.5) +
+  geom_line(aes(color= "Observed (isotropic)", linetype= "Observed (isotropic)"), size=1.5) +
+  scale_color_manual(name = "K-function",
+                     values = c('Observed (isotropic)'='red', 'CSR'= 'darkgray')
+  ) +
+  scale_linetype_manual(name = "K-function",
+                        values = c('Observed (isotropic)'='dashed', 'CSR'= 'solid')
+  ) +
+  xlim(0, 2000) +
+  ylim(0, 2.5e7) +
+  labs(y="K") +
+  theme(
+    legend.title = element_text(size=28),
+    legend.text = element_text(size=24),
+    axis.text = element_text(size=20),
+    axis.title = element_text(size=24))
+  
+frypts.tbl <- frypoints(full.ppp, dmax=1000) %>% as_tibble()
+
+p3 <- frypts.tbl %>% ggplot(aes(x=x,y=y)) +
+  geom_point(aes(color="Point \u0394's"), size=0.5) +
+  labs(x="\u0394 x (m)",
+       y="\u0394 y (m)") +
+  theme(axis.text = element_text(size=16),
+        axis.title = element_text(size=24) ) + 
+  scale_color_manual(
+    name=" ",
+    values= c("Point \u0394's" = "black") ) +
+  theme(
+    legend.title = element_text(size=28),
+    legend.text = element_text(size=24),
+    axis.text = element_text(size=20),
+    axis.title = element_text(size=24))
+
+```
+

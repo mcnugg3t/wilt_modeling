@@ -1,0 +1,491 @@
+---
+title: "Model"
+author: "Caleb Stevens cstevens5@wisc.edu"
+output: html_document
+---
+
+### Setup
+
+**Please fill in "this.wd" variable below with the path to your local folder "wilt"** then all chunks should be able to run without further changes
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## SET PATH
+this.wd <- "E:/wilt/"
+##
+
+# load packages
+library(tidyverse)
+library(sf)
+library(assertthat)
+library(mgcv)
+library(gridExtra)
+library(spatstat)
+
+# construct relative paths
+rawdat.wd <- paste0(this.wd, "raw_data/")
+cleandat.wd <- paste0(this.wd, "clean_data/")
+mod.res.path <- paste0(this.wd, "models/model_obj/")
+fun.path <- paste0(this.wd, "code/functions/")
+```
+
+# HP3-GAM
+
+## Fit Models
+
+### Load & check data
+
+```{r}
+# load data - loads as oak.dat.scale
+load(paste0(cleandat.wd, "model_data/oak_dat_scale.Rds"))
+```
+
+### Null models
+
+```{r}
+#
+# H_0A : Oak Wilt = function of spatial dependence + oak population
+#
+# REML
+mod.h0A.reml <- bam(wilt_ct ~ s(x, y) + s(oak_prob, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="fREML")
+save(mod.h0A.reml, file=paste0(mod.res.path, "mod_h0A_reml.Rds"))
+rm(mod.h0A.reml)
+# GACV
+mod.h0A.gacv <- bam(wilt_ct ~  s(x, y) + s(oak_prob, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp")
+save(mod.h0A.gacv, file=paste0(mod.res.path, "mod_h0A_gacv.Rds"))
+rm(mod.h0A.gacv)
+
+#
+# H_0B : Oak Wilt = function of oak population + environmental factors 
+#
+# REML - full
+mod.h0B.reml.full <- bam(wilt_ct ~ s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(slope, bs="cr") + s(aspect, bs="cr") + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="fREML")
+save(mod.h0B.reml.full, file=paste0(mod.res.path, "mod_h0B_reml_full.Rds")) 
+# summary(mod.h0B.reml.full)
+rm(mod.h0B.reml.full)
+# REML - subset
+mod.h0B.reml.subs <- bam(wilt_ct ~ s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(aspect, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="fREML") # 74963 - slope and plan curv only vars removed
+summary(mod.h0B.reml.subs)
+save(mod.h0B.reml.subs, file=paste0(mod.res.path, "mod_h0B_reml_subs.Rds"))
+rm(mod.h0B.reml.subs)
+
+# GACV - full
+mod.h0B.gacv.full <- bam(wilt_ct ~ s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(slope, bs="cr") + s(aspect, bs="cr") + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp")
+summary(mod.h0B.gacv.full)
+save(mod.h0B.gacv.full, file=paste0(mod.res.path, "mod_h0B_gacv_full.Rds"))
+rm(mod.h0B.gacv.full)
+# GACV - subs
+mod.h0B.gacv.subs <- bam(wilt_ct ~ s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(aspect) + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp") # 0.39471 - slope only var removed
+# summary(mod.h0B.gacv.subs)
+save(mod.h0B.gacv.subs, file=paste0(mod.res.path, "mod_h0B_gacv_subs.Rds"))
+rm(mod.h0B.gacv.subs)
+```
+
+### Fit alternative models
+
+```{r}
+#
+# H_0A : Oak Wilt = function of spatial dependence, oak population, environmental factors
+#
+# REML - full
+mod.alt.reml.full <- bam(wilt_ct ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(slope, bs="cr") + s(aspect, bs="cr") + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="fREML") 
+
+summary(mod.alt.reml.full)
+save(mod.alt.reml.full, file=paste0(mod.res.path, "mod_alt_reml_full.Rds"))
+rm(mod.alt.reml.full)
+
+mod.alt.reml.full.2 <- bam(wilt_ct ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(silt, bs="cs") + s(rsp, bs="cs") + s(hs, bs="cr") + s(ls, bs="cr") + s(aspect, bs="cr") + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="fREML") 
+summary(mod.alt.reml.full.2)
+save(mod.alt.reml.full.2, file=paste0(mod.res.path, "mod_alt_reml_full_2.Rds"))
+rm(mod.alt.reml.full.2)
+
+# REML subs
+
+mod.alt.reml.subs <- bam(wilt_ct ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(ph, bs="cs") + s(bd, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(aspect, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="fREML")
+summary(mod.alt.reml.subs)
+# 72620 -> remove slope
+# 72733 -> remove plan curve
+# 72816 -> remove sand
+# 72822 -> remove bd
+# 72788 -> add it back
+summary(mod.alt.reml.subs)
+save(mod.alt.reml.subs, file=paste0(mod.res.path, "mod_alt_reml_subs.Rds"))
+rm(mod.alt.reml.subs)
+# load(paste0(mod.res.path, "mod_alt_reml_subs.Rds"))
+
+mod.713.reml.tp <- bam(wilt_ct ~ s(x,y) + s(elev, aspect) + s(hs, bs="cs") + s(ch_net_dist, bs="cs") + s(oak_prob, bs="cs") + s(ph, bs="cs") + s(bd, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="fREML")
+save(mod.713.reml.tp, file=paste0(mod.res.path, "mod_713_reml_tp.Rds"))
+
+# GACV - full
+mod.alt.gacv.full <- bam(wilt_ct ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(slope, bs="cr") + s(aspect, bs="cr") + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp")
+summary(mod.alt.gacv.full)
+save(mod.alt.gacv.full, file=paste0(mod.res.path, "mod_alt_gacv_full.Rds"))
+rm(mod.alt.gacv.full)
+# GACV - subs
+mod.alt.gacv.subs <- bam(wilt_ct ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(sand, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(plan_curv, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp")
+# 0.40609, removed aspect
+# 0.4226 removed slope
+# 0.447 removed 
+summary(mod.alt.gacv.subs)
+save(mod.alt.gacv.subs, file=paste0(mod.res.path, "mod_alt_gacv_subs.Rds"))
+rm(mod.alt.gacv.subs)
+```
+
+### Fit training models for later model comparison
+
+```{r}
+# H_A : spatial location, population, env. factors
+mod.train.alt.reml <- bam(wilt_train ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(aspect, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="fREML") 
+save(mod.train.alt.reml, file=paste0(mod.res.path, "mod_train_alt_reml.Rds"))
+rm(mod.train.alt.reml)
+
+mod.train.alt.gacv <- bam(wilt_train ~ s(x, y) + s(oak_prob, bs="cs") + s(elev, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp") 
+# 0.38945 -> remove bd and ph, 0.5342
+save(mod.train.alt.gacv, file=paste0(mod.res.path, "mod_train_alt_gacv.Rds"))
+rm(mod.train.alt.gacv)
+
+# H_0A : spatial dependence + oak population
+mod.train.h0A.reml <- bam(wilt_train ~ s(x, y) + s(oak_prob, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="fREML")
+save(mod.train.h0A.reml, file=paste0(mod.res.path, "mod_train_h0A_reml.Rds"))
+rm(mod.train.h0A.reml)
+
+mod.train.h0A.gacv <- bam(wilt_train ~ s(x, y) + s(oak_prob, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp")
+save(mod.train.h0A.gacv, file=paste0(mod.res.path, "mod_train_h0A_gacv.Rds"))
+rm(mod.train.h0A.gacv)
+
+# H_0B : oak population + terrain & soil (no spatial dependence)
+mod.train.h0B.reml <- bam(wilt_train ~ s(oak_prob, bs="cs") + s(elev, bs="cs") + s(bd, bs="cs") + s(ph, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr") + s(aspect, bs="cs"), data=oak.dat.scale, family=poisson(link="log"), method="fREML")
+save(mod.train.h0B.reml, file=paste0(mod.res.path, "mod_train_h0B_reml.Rds"))
+rm(mod.train.h0B.reml)
+
+mod.train.h0B.gacv <- bam(wilt_train ~ s(oak_prob, bs="cs") + s(elev, bs="cs") + s(ph, bs="cs") + s(ch_net_dist, bs="cs") + s(hs, bs="cr"), data=oak.dat.scale, family=poisson(link="log"), method="GACV.Cp")
+save(mod.train.h0B.gacv, file=paste0(mod.res.path, "mod_train_h0B_gacv.Rds"))
+rm(mod.train.h0B.gacv)
+
+```
+
+
+## Compare Models 
+
+Comparisons:
+
+ 1. $H_{0A}$ vs $H_A$ (REML)
+ 
+ 2. $H_{0A}$ vs $H_A$ (GCV)
+ 
+ 3. $H_{0B}$ vs $H_A$ (REML)
+ 
+ 4. $H_{0B}$ vs $H_A$ (GACV)
+
+```{r}
+#' tests hypothesis that the null model actually has the same deviance (is as good as) the alternative model
+#'
+#' if the model with more predictors (alternative model) fits better than the null model, then the deviance reduction will be large (relative to DOF)
+#'
+# gam_f_test <- function(mgcv_null_mod, mgcv_alt_mod, DEBUG=F) {
+#   delta.dev <- (mgcv_null_mod$deviance - mgcv_alt_mod$deviance)
+#   if(DEBUG) {cat(paste0("\nalternative model deviance is lower by ", delta.dev))}
+#   assert_that(delta.dev > 0)
+#   delta.dof <- sum(mgcv_alt_mod$edf) - sum(mgcv_null_mod$edf)
+#   if(DEBUG) {cat(paste0("\nalternative model has additional dof = ", dof))}
+#   assert_that(dof > 0)
+#   p.val <- pchisq(q=t.stat, df=dof, lower.tail=F)
+#   if(DEBUG) {cat(paste0("\np = ", p.val))}
+#   if(DEBUG & p.val < 0.01) {cat(paste0("\nthe alternative model appears to explain more of the variation in the data (improved the deviance significantly)"))}
+#   if(DEBUG & p.val >= 0.01 & p.val < 0.05) {cat(paste0("\nthe alternative model appears to explain more of the variation in the data (improved the deviance moderately)"))}
+#   if(DEBUG & p.val >= 0.05) {cat(paste0("\nno significant evidence that alternative model explains observed data better than the null model"))}
+#   return(p.val)
+# }
+
+# 1 H_0A vs HA - REML
+load(paste0(mod.res.path, "mod_h0A_reml.Rds")) # mod.h0A.reml
+load(paste0(mod.res.path, "mod_alt_reml_subs.Rds")) # mod.alt.reml.subs
+anova.gam(mod.h0A.reml, mod.alt.reml.subs, test="Chisq")
+
+# 2
+load(paste0(mod.res.path, "mod_h0A_gacv.Rds")) # mod.h0A.gacv
+load(paste0(mod.res.path, "mod_alt_gacv_subs.Rds"))
+anova(mod.h0A.gacv, mod.alt.gacv.subs, test="Chisq")
+
+# 3 - H_{0B} vs H_A REML
+load(paste0(mod.res.path, "mod_h0B_reml_full.Rds")) # mod.h0B.reml.full
+load(paste0(mod.res.path, "mod_h0B_reml_subs.Rds"))
+
+anova(mod.h0B.reml.subs, mod.alt.reml.subs, test="Chisq")
+
+assert_that(sum(mod.alt.reml.full$edf) >= sum(mod.h0B.reml.full$edf))
+p3 <- chi_sq_dev_test(mod.h0B.reml.full, mod.alt.reml.full, T)
+rm(mod.h0B.reml.full); rm(mod.alt.reml.full)
+
+# 4 - H_{0B} vs H_A GACV
+load(paste0(mod.res.path, "mod_h0B_gacv_subs.Rds")) # mod.h0B.gacv.full
+load(paste0(mod.res.path, "mod_alt_gacv_subs.Rds")) # mod.alt.gacv.full
+anova(mod.h0B.gacv.subs, mod.alt.gacv.subs, test="Chisq")
+```
+
+
+## Model Results
+
+```{r}
+library(mgcViz)
+
+load(paste0(mod.res.path, "mod_alt_gacv_subs.Rds"))
+load(paste0(cleandat.wd, "model_data/oak_dat_scale.Rds"))
+load(paste0(mod.res.path, "mod_713_reml_tp.Rds"))
+
+b <- getViz(mod.713.reml.tp)
+
+p1 <- plot( sm(b, 1))#; p1
+p2 <-  plot( sm(b, 2))#; p2
+p3 <-  plot( sm(b, 3))#; p3
+p4 <-  plot( sm(b, 4))#; p4
+p5 <-  plot( sm(b, 5))#; p5
+p6 <-  plot( sm(b, 6))#; p6
+
+
+p01 <- plot(sm(b, 7)) + labs(title="Elevation Smooth") + theme(title = element_text(size=24, hjust=0.5))
+
+pts.test <- st_read(paste0(cleandat.wd, "sa_points/sa_points.shp")) %>% filter(!is.na(year), year>=2019)
+pred <- predict(mod.alt.gacv.subs) %>% 
+  as_tibble()
+pred$x <- oak.dat.scale$x; pred$y <- oak.dat.scale$y
+
+pred.plot <- pred %>% 
+  filter(value>-10, value<0) %>% 
+  mutate(relative_risk = 100*((value-min(value))/(max(value)-min(value)))) %>% 
+  mutate(x=(x*attr(x, "scaled:scale"))+attr(x, "scaled:center"),
+         y=(y*attr(y, "scaled:scale"))+attr(y, "scaled:center"))
+
+p2 <- ggplot() + 
+  geom_tile(data=pred.plot, aes(x=x,y=y,fill=relative_risk)) + 
+  geom_sf(data=pts.test,  color="red", size=0.75) +
+  scale_fill_viridis_b(direction=-1, option="D")
+```
+
+
+# CPM
+
+## Fit Models
+
+### setup
+
+```{r}
+load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+load(paste0(cleandat.wd, "model_data/im_list.Rds")) # im.list
+```
+
+### prepare data
+
+```{r}
+load(paste0(cleandat.wd, "model_data/pop_dat_scale.Rds")) # loads as pop.dat.scale
+source(paste0(fun.path, "tbl_to_im.R")) # source function to convert tbl to im object
+vars.to.im <- c(colnames(pop.dat.scale)[c(5:8, 11:23)]) # subset variable names to convert to im objects
+im.list <- tbl_to_im(pop.dat.scale, vars.to.im, st_crs(3071), tmp.path = paste0(this.wd, "tmp/"), DEBUG=F) # convert those variables to im.list
+save(im.list, file=paste0(cleandat.wd, "model_data/im_list.Rds")) # save im list
+```
+
+### fit null models
+
+Only $H_{0A}$ : spatial dependence and oak wilt population
+
+```{r}
+load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+load(paste0(cleandat.wd, "model_data/im_list.Rds"))
+source(paste0(fun.path, "create_null_cpm.R"))
+
+create_null_cpm(
+  method_str="clik2", 
+  improve_str="wclik1", 
+  cluster_type="Cauchy", 
+  save_name="c2wc1")
+
+create_null_cpm(
+  method_str="clik2", 
+  improve_str="wclik1", 
+  cluster_type="VarGamma", 
+  save_name="c2wc1")
+
+create_null_cpm(
+  method_str="palm", 
+  improve_str="quasi", 
+  cluster_type="Cauchy", 
+  save_name="qp")
+
+create_null_cpm(
+  method_str="palm", 
+  improve_str="quasi", 
+  cluster_type="VarGamma", 
+  save_name="qp")
+```
+
+### fit alternative models
+
+```{r}
+load(paste0(cleandat.wd, "model_data/sa_quad.Rds"))
+load(paste0(cleandat.wd, "model_data/im_list.Rds"))
+source(paste0(fun.path, "create_alt_cpm.R"))
+source(paste0(fun.path, "create_alt_cpm_gam.R"))
+
+create_alt_cpm(
+  var_str = "sa.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope", 
+  method_str = "clik2", 
+  improve_str="wclik1", 
+  cluster_type="Cauchy", 
+  save_name = "c2wc1")
+
+create_alt_cpm(
+  var_str = "sa.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope", 
+  method_str = "clik2", 
+  improve_str="wclik1", 
+  cluster_type="VarGamma", 
+  save_name = "c2wc1"
+)
+
+create_alt_cpm(
+  var_str = "sa.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope", 
+  method_str = "palm", 
+  improve_str="quasi", 
+  cluster_type="Cauchy", 
+  save_name = "qp")
+
+create_alt_cpm(
+  var_str = "sa.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope", 
+  method_str = "palm", 
+  improve_str="quasi", 
+  cluster_type="VarGamma", 
+  save_name = "qp"
+)
+
+create_alt_cpm_gam(
+  var_str = "sa.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope", 
+  method_str = "clik2", 
+  cluster_type="Cauchy",
+  gam_bool=T,
+  save_name = "c2_gam"
+)
+
+# all vars: "full.ppp ~ surv_bool + pine_bool + oak_prob + bd + ph + sand + ch_net_dist + hs + elev + slope + aspect + plan_curv"
+```
+
+### Fit training models
+
+```{r}
+load(paste0(cleandat.wd, "model_data/train_quad.Rds")) # train.quad
+load(paste0(cleandat.wd, "model_data/im_list.Rds")) # im.list
+source(paste0(fun.path, "create_train_cpm.R"))
+source(paste0(fun.path, "create_train_cpm_gam.R"))
+
+create_train_cpm(
+  var_str="train.quad ~ surv_bool + oak_prob", 
+  method_str="clik2", 
+  improve_str="wclik1", 
+  cluster_type="Cauchy",
+  hyp_str = "h0A",
+  save_str = "c2wc1")
+
+create_train_cpm(
+  var_str="train.quad ~ surv_bool + oak_prob", 
+  method_str="palm", 
+  improve_str="quasi", 
+  cluster_type="Cauchy",
+  hyp_str = "h0A",
+  save_str = "qp")
+
+create_train_cpm(
+  var_str = "train.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope",
+  method_str="clik2", 
+  improve_str="wclik1", 
+  cluster_type="Cauchy",
+  hyp_str = "hA",
+  save_str = "c2wc1"
+)
+
+create_train_cpm(
+  var_str = "train.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope",
+  method_str="palm", 
+  improve_str="quasi", 
+  cluster_type="Cauchy",
+  hyp_str = "hA",
+  save_str = "qp"
+)
+
+create_train_cpm_gam(
+  var_str = "train.quad ~ surv_bool + oak_prob + bd + ch_net_dist + hs + elev + slope",
+  method_str="clik2", 
+  gam_bool = T, 
+  cluster_type="Cauchy",
+  hyp_str = "hA",
+  save_str = "c2_gam"
+)
+
+```
+
+
+## Compare null to alternative model
+
+```{r}
+
+compare_cpm <- function(cpm_ha, cpm_h0, DEBUG=F) {
+  delta.dof <- as.integer(attr(logLik(cpm_ha), "df")) - as.integer(attr(logLik(cpm_h0), "df"))
+  if(DEBUG) {cat(paste0("\n\n\ndelta.dof = ", as.integer(delta.dof)) )}
+  t.stat <- 2*(as.numeric(logLik(cpm_ha)) - as.numeric(logLik(cpm_h0)))
+  if(DEBUG) {cat(paste0("\nt-stat = ", t.stat))}
+  p.val <- pchisq(t.stat, df=delta.dof, lower.tail=F)
+  if(DEBUG) cat(paste0("\np = ", p.val))
+  return(p.val)
+}
+
+# 1
+cpm.path <- paste0(mod.res.path, "cpm/")
+load(paste0(cpm.path, "cpm_h0A_Cauchy_c2wc1.Rds"))
+load(paste0(cpm.path, "cpm_hA_Cauchy_c2wc1.Rds"))
+compare_cpm(cpm_hA_Cauchy_c2wc1, cpm_h0A_Cauchy_c2wc1, DEBUG=T)
+
+# 1
+load(paste0(cpm.path, "cpm_hA_Cauchy_qp.Rds"))
+load(paste0(cpm.path, "cpm_h0A_Cauchy_qp.Rds"))
+compare_cpm(cpm_hA_Cauchy_qp, cpm_h0A_Cauchy_qp, DEBUG=T)
+
+AIC(cpm_h0A_Cauchy_qp) - AIC(cpm_hA_Cauchy_qp)
+
+# 2
+load(paste0(cpm.path, "cpm_hA_Cauchy_qp.Rds"))
+load(paste0(cpm.path, "cpm_h0A_Cauchy_qp.Rds"))
+compare_cpm(cpm_hA_Cauchy_qp, cpm_h0A_Cauchy_qp, DEBUG=T)
+
+# 3
+load(paste0(cpm.path, "cpm_hA_VarGamma_c2wc1.Rds"))
+load(paste0(cpm.path, "cpm_h0A_VarGamma_c2wc1.Rds"))
+compare_cpm(cpm_hA_VarGamma_c2wc1, cpm_h0A_VarGamma_c2wc1, DEBUG=T)
+
+# 4
+load(paste0(cpm.path, "cpm_hA_VarGamma_qp.Rds"))
+load(paste0(cpm.path, "cpm_h0A_VarGamma_qp.Rds"))
+compare_cpm(cpm_hA_VarGamma_qp, cpm_h0A_VarGamma_qp, DEBUG=T)
+
+```
+
+## Visualize
+
+```{r}
+
+load(paste0(mod.res.path,"cpm/cpm_hA_Cauchy_c2_gam.Rds"))
+pred <- predict(cpm_hA_Cauchy_c2_gam) %>% as_tibble()
+
+pred.plot <- pred %>% 
+  filter(value <= 3e-05) %>% 
+  mutate(relative_risk = 100*((value-min(value))/(max(value)-min(value))) )
+
+p1 <- ggplot() +
+  geom_tile(data=pred.plot, aes(x=x,y=y, fill=relative_risk)) +
+  geom_sf(data=pts.test, color="red") +
+  scale_fill_viridis_b(direction=-1, option="D")
+```
+
+
+
+
+
+
+

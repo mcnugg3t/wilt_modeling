@@ -1,0 +1,832 @@
+---
+title: "data_clean"
+author: "Caleb Stevens cstevens5@wisc.edu"
+output: html_document
+---
+
+**To run code, set working directory below**
+
+### Setup
+
+```{r setup, include=FALSE}
+##
+## set path to folder
+this.wd <- "D:/Backed Up/Desktop/wilt_modeling/"
+##
+##
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(assertthat)
+library(sf)
+library(stars)
+dat.wd <- paste0(this.wd, "raw_data/")
+```
+
+# Clean Data
+
+**Sources**
+
+ 1. WiscLand2 level 3 - classification + Oak classification accuracy
+ 
+    - crop WL2.3 data to study area environs (larger than study area) and save
+ 
+    - this data defines study grid (grd.template)
+ 
+ 2. POLARIS soil maps
+ 
+    - compute weighted avg & save (for entire POLARIS map)
+    
+    - then, warp to study grid and save cropped version
+ 
+ 3. SAGA-computed terrain data
+    
+    - warp to study grid, save
+    
+ 4. Private land & water from CNNF Manage Shapefile
+ 
+ 5. Distance to stream & distance to lake
+
+
+**Combine all sources of data in a .Rds tibble**
+
+
+## 1 - WiscLand2
+
+### Classification
+
+```{r}
+# Set working directory
+setwd(dat.wd) 
+# Read shapefile defining full study area
+full.area <- st_read("full_area/elev_pull_bbox.shp") 
+# Check crs
+assert_that(st_crs(full.area) == st_crs(3071)) 
+# Read WiscLand2 data and reproject to project default CRS (3071)
+wl2.class <- stars::read_stars("wiscland2_lvl_3/wiscland2_level3.tif", proxy = F) 
+st_crs(wl2.class)
+# Crop Wiscland2 data to the full study area
+wl2.crop <- stars::st_crop(wl2.class, full.area) 
+# rename attribute
+setNames(wl2.crop, c("wl2_3_cls")) 
+# check CRS
+assert_that(st_crs(wl2.crop) == st_crs(3071))
+# write cropped data for later use
+stars::write_stars(obj = wl2.crop, dsn=paste0(dat.wd, "wiscland2_lvl_3/wl2_cls_crop.tif")) # write cropped classification data
+# define grid template using WiscLand2 level 3 grid - background value = 0
+grd.template <- wl2.crop %>% 
+  mutate(val=0) %>% 
+  select(val)
+# check CRS
+assert_that(st_crs(grd.template) == st_crs(3071))
+# write grid template
+stars::write_stars(obj=grd.template, dsn=paste0(dat.wd, "study_area/grd_template.tif"))
+# remove variables
+rm(wl2.class); rm(wl2.crop); rm(grd.template) 
+```
+
+### Oak Classification Probability
+
+```{r}
+setwd(dat.wd)
+grd.template <- stars::read_stars(paste0(dat.wd, "study_area/grd_template.tif")) # read grid template
+wl2.clsprob <- stars::read_stars("wiscland2_lvl_3/wiscland2_level3_4230_conf.tif", proxy=F) # read classification probability data -- same issue as comment above - CRS wrongly specified in file
+st_crs(wl2.clsprob) <- st_crs(3071) # fixed by assignment
+wl2.clsprob.crop <- stars::st_warp(src=wl2.clsprob, dest=grd.template, use_gdal=T, no_data_value=-100, method="bilinear") # warp because defined on a **VERY SLIGHTLY** different grid than the WL2 data itself - incredibly annoying
+setNames(wl2.clsprob.crop, c("wl2_cls_prob")) # rename attribute
+
+assert_that(st_crs(wl2.clsprob.crop) == st_crs(grd.template))
+write_stars(obj=wl2.clsprob.crop, dsn=paste0(dat.wd, "wiscland2_lvl_3/wl2_prob_crop.tif")) # write
+
+rm(wl2.clsprob); rm(wl2.clsprob.crop) # rm obj
+```
+
+
+## 2 - Polaris
+
+Compute weighted average first, then warp to study grid
+
+### Bulk Density
+
+```{r}
+setwd(paste0(dat.wd, "polaris/bd/"))
+
+grd.template <- stars::read_stars(paste0(dat.wd, "study_area/grd_template.tif"))
+
+bd_0_5 <- read_stars("bd_0_5.tif") * 5
+bd_5_15 <- read_stars("bd_5_15.tif") * 10
+bd_15_30 <- read_stars("bd_15_30.tif") * 15
+bd_30_60 <- read_stars("bd_30_60.tif") * 30
+bd_60_100 <- read_stars("bd_60_100.tif") * 40
+
+bd_0_100 <- (bd_0_5 + bd_5_15 + bd_15_30 + bd_30_60 + bd_60_100)/100
+
+bd.sa <- st_warp(src=bd_0_100, dest=grd.template, no_data_value=-100, use_gdal=T, method="bilinear")
+
+setNames(bd.sa, c("bd_0_100") )
+
+assert_that(st_crs(bd.sa) == st_crs(grd.template))
+
+write_stars(bd.sa, dsn=paste0(dat.wd, "polaris/sa/bd_sa.tif"))
+
+rm(bd_0_5); rm(bd_5_15); rm(bd_15_30); rm(bd_30_60); rm(bd_60_100); rm(bd_0_100); rm(bd.sa)
+```
+### Clay
+
+```{r}
+setwd(paste0(dat.wd, "polaris/clay/"))
+
+clay_0_5 <- read_stars("clay_0_5.tif") * 5
+clay_5_15 <- read_stars("clay_5_15.tif") * 10
+clay_15_30 <- read_stars("clay_15_30.tif") * 15
+clay_30_60 <- read_stars("clay_30_60.tif") * 30
+clay_60_100 <- read_stars("clay_60_100.tif") * 40
+
+clay_0_100 <- (clay_0_5 + clay_5_15 + clay_15_30 + clay_30_60 + clay_60_100)/100
+
+clay.sa <- st_warp(src=clay_0_100, dest=grd.template, no_data_value=-100, use_gdal=T, method="bilinear")
+
+setNames(clay.sa, c("clay_0_100"))
+
+assert_that(st_crs(clay.sa) == st_crs(grd.template))
+
+write_stars(clay.sa, dsn=paste0(dat.wd, "polaris/sa/clay_sa.tif"))
+
+rm(clay_0_5); rm(clay_5_15); rm(clay_15_30); rm(clay_30_60); rm(clay_60_100); rm(clay_0_100); rm(clay.sa)
+```
+
+### pH
+
+```{r}
+setwd(paste0(dat.wd, "polaris/ph"))
+
+ph_0_5 <- read_stars("ph_0_5.tif") * 5
+ph_5_15 <- read_stars("ph_5_15.tif") * 10
+ph_15_30 <- read_stars("ph_15_30.tif") * 15
+ph_30_60 <- read_stars("ph_30_60.tif") * 30
+ph_60_100 <- read_stars("ph_60_100.tif") * 40
+
+ph_0_100 <- (ph_0_5 + ph_5_15 + ph_15_30 + ph_30_60 + ph_60_100)/100
+
+ph.sa <- st_warp(src=ph_0_100, dest=grd.template, no_data_value=-100, use_gdal=T, method="bilinear")
+
+setNames(ph.sa, c("ph_0_100"))
+
+assert_that(st_crs(ph.sa) == st_crs(grd.template))
+write_stars(ph.sa, dsn=paste0(dat.wd, "polaris/sa/ph_sa.tif"))
+
+rm(ph_0_5); rm(ph_5_15); rm(ph_15_30); rm(ph_30_60); rm(ph_60_100); rm(ph_0_100); rm(ph.sa)
+```
+
+### sand
+
+```{r}
+setwd(paste0(dat.wd, "polaris/sand"))
+
+sand_0_5 <- read_stars("sand_0_5.tif") * 5
+sand_5_15 <- read_stars("sand_5_15.tif") * 10
+sand_15_30 <- read_stars("sand_15_30.tif") * 15
+sand_30_60 <- read_stars("sand_30_60.tif") * 30
+sand_60_100 <- read_stars("sand_60_100.tif") * 40
+
+sand_0_100 <- (sand_0_5 + sand_5_15 + sand_15_30 + sand_30_60 + sand_60_100)/100
+
+sand.sa <- st_warp(src=sand_0_100, dest=grd.template, no_data_value=-100, use_gdal=T, method="bilinear")
+
+setNames(sand.sa, c("sand_0_100"))
+
+assert_that(st_crs(sand.sa) == st_crs(grd.template))
+write_stars(sand.sa, dsn=paste0(dat.wd, "polaris/sa/sand_sa.tif"))
+
+ rm(sand_0_5); rm(sand_5_15); rm(sand_15_30); rm(sand_30_60); rm(sand_60_100); rm(sand_0_100); rm(sand.sa)
+```
+
+### silt
+
+```{r}
+setwd(paste0(dat.wd, "polaris/"))
+
+clay.sa <- read_stars("sa/clay_sa.tif")
+sand.sa <- read_stars("sa/sand_sa.tif")
+
+silt.sa = -1*( (clay.sa + sand.sa)-100 )
+
+setNames(silt.sa, c("silt_0_100"))
+
+assert_that(st_crs(silt.sa) == st_crs(grd.template))
+write_stars(silt.sa, dsn=paste0(dat.wd, "polaris/sa/silt_sa.tif"))
+
+rm(clay.sa); rm(sand.sa); rm(silt.sa)
+```
+
+## 3 - Elevation & SAGA-computed data
+
+```{r}
+setwd(paste0(dat.wd, "saga_terrain/")) # set working directory
+grd.template <- read_stars(paste0(dat.wd, "study_area/grd_template.tif")) # load study grid template
+
+#***
+#* function that:
+#*      - reads terrain data calculated by SAGAGIS
+#*      - warps data to the study grid & aggregates according to specified method
+#*      - saves resulting data
+#*
+warp_saga_dat <- function(name_str, method_str, save_str, BAND=F) {
+  dat.tmp <- read_stars(paste0(name_str, ".tif") )
+  st_crs(dat.tmp) <- st_crs(3071) # data output from SAGAGIS may be missing CRS. If so, we know based on input DEM that it's WTM (3071)
+  if(BAND) {
+    dat.fix <- dat.tmp %>% slice(band, 1)
+  } else {
+    dat.fix <- dat.tmp
+  }
+  # warp
+  sa.tmp <- st_warp(src=dat.fix, dest=grd.template, no_data_value=-100, use_gdal=T, method=method_str)
+  st_dimensions(sa.tmp) <- st_dimensions(grd.template) # set dimensions
+  setNames(sa.tmp, save_str) # set name
+  assert_that(st_crs(sa.tmp) == st_crs(grd.template))
+  write_stars(sa.tmp, dsn=paste0(dat.wd, "saga_terrain/sa/", save_str, ".tif"))
+}
+
+# elevation
+warp_saga_dat("Wilt_DEM_10_final", "average", "elev")
+
+# channel network distance
+warp_saga_dat("channel_network_distance_s3", "average", "ch_net_dist_s3_avg", T)
+warp_saga_dat("channel_network_distance_s3", "min", "ch_net_dist_s3_min", T)
+warp_saga_dat("channel_network_distance_s3", "max", "ch_net_dist_s3_max", T)
+
+warp_saga_dat("channel_network_distance_s5", "average", "ch_net_dist_s5_avg", T)
+warp_saga_dat("channel_network_distance_s5", "min", "ch_net_dist_s5_min", T)
+warp_saga_dat("channel_network_distance_s5", "max", "ch_net_dist_s5_max", T)
+
+warp_saga_dat("channel_network_distance_s7", "average", "ch_net_dist_s7_avg", T)
+warp_saga_dat("channel_network_distance_s7", "min", "ch_net_dist_s7_min", T)
+warp_saga_dat("channel_network_distance_s7", "max", "ch_net_dist_s7_max", T)
+
+# convergence index
+warp_saga_dat("convergence_index", "average", "conv_ind_avg", T)
+warp_saga_dat("convergence_index", "min", "conv_ind_min", T)
+warp_saga_dat("convergence_index", "max", "conv_ind_max", T)
+
+# topographic wetness
+warp_saga_dat("topo_wetness_index", "average", "twi_avg", T)
+warp_saga_dat("topo_wetness_index", "min", "twi_min", T)
+warp_saga_dat("topo_wetness_index", "max", "twi_max", T)
+
+# topographic wetness
+warp_saga_dat("total_catchment_area", "average", "tca_avg", T)
+warp_saga_dat("total_catchment_area", "min", "tca_min", T)
+warp_saga_dat("total_catchment_area", "max", "tca_max", T)
+
+# watershed
+warp_saga_dat("watershed_basins", "mode", "ws", T)
+
+# slope, aspect, hillshade, ls, plan_curv, prof_curv, rsp, val_dep calculated using 30 m avg'ed DEM
+# so don't need to aggregate, just extract value
+warp_saga_dat("slope_30", "near", "slope", T)
+warp_saga_dat("aspect_30", "near", "aspect", T)
+warp_saga_dat("hs_30", "near", "hs", T)
+warp_saga_dat("ls_30", "near", "ls", T)
+warp_saga_dat("plan_curv_30", "near", "plan_curv", T)
+warp_saga_dat("prof_curv_30", "near", "prof_curv", T)
+warp_saga_dat("rsp_30", "near", "rsp", T)
+warp_saga_dat("val_dep_30", "near", "val_dep", T)
+
+
+# test
+# setwd("E:/wilt/raw_data/saga_terrain/")
+# grd.template <- read_stars(paste0(dat.wd, "wiscland2_lvl_3/wl2_cls_crop.tif"))
+# dat.tmp <- read_stars("channel_network_distance.tif") %>% slice(band,1)
+# st_crs(dat.tmp) <- st_crs(3071) 
+# sa.tmp <- st_warp(src=dat.tmp, dest=grd.template, no_data_value=-100, use_gdal=T, method="average")
+```
+
+## 4 Private Land & Water
+
+### Private Land
+
+```{r}
+
+priv.shp <- st_read(paste0(dat.wd, "cnnf_manage_areas/CNNF_Management_Areas.shp")) %>% 
+  filter(MA %in% c("O", "T")) %>% 
+  select(geometry) # select geometry of management polygons that are classified as private (O) or tribal (T)
+
+st_crs(priv.shp) <- st_crs(3071) # fix CRS by assignment - (same as above) it's WTM but the string saved in file CRS is non-stand and EPSG code is wrong
+
+grd.template <- read_stars(paste0(dat.wd, "study_area/grd_template.tif")) # load study grid template
+
+priv.rast <- st_rasterize(sf=priv.shp, template=grd.template, align=F) # rasterize polygons from management shapefile onto study grid - object ID is burned
+
+priv.fin <- priv.rast %>% 
+  mutate(priv = as.numeric( (ID > 0) )) %>% 
+  select(priv) # pixels with non-zero value now get (1) == private
+
+setNames(priv.fin, c("priv"))
+
+st_dimensions(priv.fin) <- st_dimensions(grd.template)
+
+assert_that(st_crs(priv.fin) == st_crs(grd.template))
+write_stars(priv.fin, dsn=paste0(dat.wd, "cnnf_manage_areas/sa_priv.tif"))
+
+rm(priv.shp); rm(priv.rast); rm(priv.fin)
+# tst
+# sa.shp <- st_read(paste0(dat.wd, "study_area/may_15_SA.shp")) # study area for plotting
+# ggplot() + geom_stars(data = priv.fin) + geom_sf(data = sa.shp, color="red", fill=NA)
+```
+
+### Water
+
+```{r}
+water.shp <- st_read(paste0(dat.wd, "cnnf_manage_areas/CNNF_Management_Areas.shp")) %>% 
+  filter(MA == "W") %>% 
+  select(geometry) # select geometry of management polygons that are classified as private (O) or tribal (T)
+
+st_crs(water.shp) <- st_crs(3071) # fix CRS by assignment - (same as above) it's WTM but the string saved in file CRS is non-stand and EPSG code is wrong
+
+grd.template <- read_stars(paste0(dat.wd, "study_area/grd_template.tif")) # load study grid template
+
+water.rast <- st_rasterize(sf=water.shp, template=grd.template, align=F) # rasterize polygons from management shapefile onto study grid - object ID is burned
+
+water.fin <- water.rast %>% 
+  mutate(water = as.numeric( (ID > 0) )) %>% 
+  select(water) # pixels with non-zero value now get (1) == private
+
+st_dimensions(water.fin) <- st_dimensions(grd.template)
+
+assert_that(st_crs(water.fin) == st_crs(grd.template))
+write_stars(water.fin, dsn=paste0(dat.wd, "cnnf_manage_areas/sa_water.tif"))
+```
+
+## 5 Distance to Stream, Distance to Lake
+
+**Rasterize onto study grid**
+
+```{r}
+
+```
+
+## 6 Selected Study Area
+
+```{r}
+sa.shp <- st_read(paste0(dat.wd, "study_area/may_15_SA.shp")) # read study area shapefile
+grd.template <- read_stars(paste0(dat.wd, "study_area/grd_template.tif")) # read grid template
+assert_that(st_crs(sa.shp) == st_crs(3071))
+sa.rast <- st_rasterize(sf=sa.shp, template=grd.template, align=F) # rasterize study area onto grid template
+assert_that(st_crs(sa.rast) == st_crs(3071))
+write_stars(sa.rast, dsn=paste0(dat.wd, "study_area/sa_rast.tif")) # check & save
+# rm(sa.shp); rm(grd.template); rm(sa.rast)
+```
+
+## 7 Wilt (boolean)
+
+```{r}
+wilt.shp <- st_read(paste0(dat.wd, "comb_points/comb_points.shp"))
+grd.template <- read_stars(paste0(dat.wd, "study_area/grd_template.tif")) # read grid template
+assert_that(st_crs(wilt.shp) == st_crs(3071))
+wilt.rast <- st_rasterize(sf=wilt.shp, template=grd.template, align=F)
+wilt.fin <- wilt.rast %>% 
+  mutate(wilt = as.numeric(ID > 0)) %>% 
+  select(wilt)
+assert_that(st_crs(wilt.fin) == st_crs(3071))
+write_stars(wilt.fin, dsn=paste0(dat.wd, "comb_points/wilt_pts_rast.tif"))
+
+rm(wilt.shp); rm(wilt.rast); rm(wilt.fin)
+```
+
+# Covariate Exploratory Plots (initial variable selection)
+
+First assemble basic data tbl - basic descriptive data for study area data : 
+
+```{r}
+# assemble tibble with grid, study area, management, and oaks
+
+# load data & combine
+sa.rast <- read_stars(paste0(dat.wd, "study_area/sa_rast.tif")) %>% 
+  setNames("sa")
+priv.rast <- read_stars(paste0(dat.wd, "cnnf_manage_areas/sa_priv.tif")) %>% 
+  setNames("priv")
+water.rast <- read_stars(paste0(dat.wd, "cnnf_manage_areas/sa_water.tif")) %>% 
+  setNames("water")
+wl2.rast <- read_stars(paste0(dat.wd, "wiscland2_lvl_3/wl2_cls_crop.tif")) %>% 
+  setNames("wl2_cls")
+oak.cls.rast <- read_stars(paste0(dat.wd, "wiscland2_lvl_3/wl2_prob_crop.tif")) %>% 
+  setNames("oak_prob")
+wilt.rast <- read_stars(paste0(dat.wd, "comb_points/wilt_pts_rast.tif")) %>% 
+  setNames("wilt")
+  
+dat.rast <- c(sa.rast, priv.rast, water.rast, wl2.rast, oak.cls.rast, wilt.rast)
+
+full.df <- dat.rast %>% 
+  as_tibble() %>% 
+  mutate(oak = as.numeric(wl2_cls == 4230)) %>% 
+  mutate(oak_prob = if_else(oak == 1, true=oak_prob, false=0) ) %>% 
+  relocate(wilt, .before=x) %>% 
+  relocate(oak, .before=x)
+
+save(full.df, file=paste0(dat.wd, "study_area/full_df.Rds"))
+
+# filter to pixels in study area, 
+sa.df <- full.df %>%
+  filter(sa == 1) %>% 
+  select(-sa) %>% 
+
+save(sa.df, file=paste0(dat.wd, "study_area/sa_df.Rds"))
+
+
+sum(sa.df$wilt) #522 pixels with  Wilt
+
+sum(sa.df$wilt[sa.df$oak == 0]) # 46 Wilt  pixels not classified as oak (in study area)
+
+rm(sa.rast); rm(priv.rast); rm(water.rast); rm(wl2.rast); rm(oak.cls.rast); rm(wilt.rast)
+rm(dat.rast); rm(full.df); rm(sa.df)
+```
+
+For each covariate in vector, join to sa.df and plot:
+
+  - covar distribution in full SA
+  
+  - covar distribution among Oak pixels
+  
+  - covar distribution among wilt pixels
+
+  - oak_ cls_prob vs covar
+  
+  - covar mapped
+  
+3
+
+  - chi-gram + p-val
+
+```{r}
+load(paste0(dat.wd, "study_area/sa_df.Rds")) # loads as sa.df
+
+folder.v <- c(rep("polaris/sa/", 5), rep("saga_terrain/sa/", 29))
+
+file.v <- c(list.files(path=paste0(dat.wd, "polaris/sa/")),
+            list.files(path = paste0(dat.wd, "saga_terrain/sa/")))
+
+n.var <- length(file.v)
+
+wilt.px <- sa.df %>%
+  filter(wilt == 1)
+
+quants.v <- seq(from=0, to=1, by=0.1)
+
+wilt.tot <- sum(sa.df$wilt)
+
+library(gridExtra)
+
+varstr.v <- c()
+pval.v <- c()
+plot.list <- list()
+
+DEBUG <- F
+for (i in seq_len(n.var)) {
+  # read data, convert to df
+  path.str <- paste0(folder.v[i], file.v[i])
+  cat(paste0("\npath string = ", dat.wd, path.str))
+  if(DEBUG) {cat(paste0("\n\t reading..."))}
+  dat.tmp <- read_stars(paste0(dat.wd, path.str) ) %>% as_tibble()
+  if(DEBUG) {cat(paste0("\n\t\tdone reading...")); cat(paste0("\n\n"))}
+  if(DEBUG) {cat(paste0(str(dat.tmp)))}
+  # join
+  join.tmp <- left_join(sa.df, dat.tmp, by=c("x", "y"))
+  var.name <- colnames(join.tmp)[9]
+  str.tmp.v <- str_split(colnames(join.tmp)[9], pattern=".tif") %>% unlist()
+  varstr <- str.tmp.v[1]
+  varstr.v <- c(varstr.v, varstr)
+  cat(paste0("\n\tvar name = ", varstr))
+  # histogram in full SA
+  p1 <- join.tmp %>%
+    ggplot() +
+      geom_histogram(aes_string(x=var.name)) +
+      labs(title=varstr)
+  # histogram among Oak pixels in SA
+  p2 <- join.tmp %>%
+    filter(oak == 1) %>%
+    ggplot() +
+      geom_histogram(aes_string(x=var.name)) +
+      labs(title="hist among oak px")
+  p2.5 <- join.tmp %>% 
+    filter(wilt == 1) %>% 
+    ggplot() +
+    geom_histogram(aes_string(x=var.name)) +
+    labs(title="hist wilt px")
+  # var vs oak_cls in study area
+  p3 <- join.tmp %>%
+    filter(oak == 1) %>% 
+    ggplot() +
+      geom_point(aes_string(x=var.name, y="oak_prob")) +
+      labs(title=paste0("oak_prob vs ", varstr) )
+  # var mapped in SA with wilt points marked
+  dat.subs <- join.tmp %>%
+    slice_sample(prop=0.2) %>%
+    mutate(var_scale = scale(!!sym(var.name)))
+  p4 <- ggplot() +
+      geom_point(data=dat.subs, aes(x=x, y=y, color=var_scale)) +
+      geom_point(data=wilt.px, aes(x=x,y=y), color="red", size=1, alpha=0.2) +
+      labs(title="spatial dist")
+  # chi-gram + p-val
+  resp.v <- join.tmp %>% select(!!var.name) %>% as_vector() %>% as.numeric()
+  resp.decs <- quantile(resp.v, quants.v, na.rm=T)
+  count.v <- c()
+  prop.v <- c()
+  for (i in 1:10) {
+    bot.range <- resp.decs[i] %>% as.numeric(); top.range <- resp.decs[i+1] %>% as.numeric()
+    dat.tmp <- join.tmp %>%
+      filter(!!sym(var.name) >= bot.range, !!sym(var.name) < top.range) %>%
+      summarise(wilt_sum = sum(wilt)) %>%
+      select(wilt_sum) %>%
+      as_vector() %>%
+      as.numeric()
+    count.v <- c(count.v, dat.tmp)
+    prop.v <- c(prop.v, dat.tmp/wilt.tot)
+  }
+  prop.dat <- tibble(dec = 1:10, count_wilt = count.v, prop_wilt = prop.v) %>%
+    add_column(expect = wilt.tot/10) %>%
+    mutate(chi_g = (count_wilt-expect)/sqrt(expect))
+  t.stat <- prop.dat %>%
+    summarise(test_stat = sum(chi_g^2)) %>%
+    select(test_stat) %>%
+    as_vector() %>%
+    as.numeric()
+  p.val <- pchisq(t.stat, df=9, lower.tail=F)
+  pval.v <- c(pval.v, p.val)
+  chi.cut <- qchisq(p=0.99, df=9) %>% sqrt()
+
+  p5 <- prop.dat %>%
+    ggplot(aes(x=dec, y=chi_g)) +
+    geom_hline(yintercept=chi.cut,color="red", size=2) + geom_hline(yintercept=-chi.cut, color="red", size=2) +
+    geom_point() + 
+    labs(title=paste0("chi p = ", round(p.val, 5) ) )
+
+  # combine plots
+  p.tot <- grid.arrange(p1,p2,p2.5,p3,p4,p5, nrow=2)
+  if (DEBUG) {cat(paste0("\nstoring ... "))}
+  # store
+  plot.list <- append(plot.list, p.tot)
+}
+
+cat(paste0("\nDONE"))
+save(plot.list, file=paste0(this.wd, "expl_analysis/covar_plot_list.Rds"))
+
+p.tbl <- tibble(var.n = varstr.v, pval = pval.v)
+save(p.tbl, file=paste0(this.wd, "expl_analysis/var_importance_tbl.Rds"))
+```
+
+```{r}
+p.tbl %>% 
+  mutate(var.n = as.factor(var.n)) %>% 
+  ggplot() + 
+    geom_col(aes(x=var.n, y=log(1/pval), color=var.n)) + 
+    theme(axis.text.x = element_text(angle=90, vjust=0.5, hjust=1)) +
+    labs(title="log(1/p) larger = better")
+```
+
+
+```{r}
+# load(paste0(this.wd, "expl_analysis/covar_plot_list.Rds"))
+# for(j in seq_len(length(varstr.v))) {
+#   cat(paste0("\nvar = ", varstr.v[j]))
+#   plot.list[[j]]
+#   tmp <- readline("press ENTER / RETURN for next plot...")
+# }
+```
+
+# Merge and assemble data
+
+starting variables : 
+
+ - bd, clay, ph, sand, silt
+
+ - ch_net_dist_s7_avg, ch_net_dist_s3_avg
+ 
+ - conv_ind_avg (alt conv_ind_min)
+ 
+ - aspect, slope, tca, rsp, elev, hs, ls
+ 
+ - plan_curv
+
+```{r}
+setwd(dat.wd)
+
+load(paste0(dat.wd, "study_area/full_df.Rds")) # loads as full.df
+
+var.path.v <- c(
+  "polaris/sa/bd_sa.tif", "polaris/sa/ph_sa.tif", "polaris/sa/sand_sa.tif", "polaris/sa/silt_sa.tif", # bd, ph, sand, silt
+  "saga_terrain/sa/ch_net_dist_s7_avg.tif", "saga_terrain/sa/hs.tif", "saga_terrain/sa/elev.tif", # ch_net_dist, hs, elev
+  "saga_terrain/sa/rsp.tif", "saga_terrain/sa/slope.tif", "saga_terrain/sa/aspect.tif", # rsp, slope, aspect
+  "saga_terrain/sa/ls.tif", "saga_terrain/sa/plan_curv.tif") # ls, plan_curv
+
+var.name.v <- c(
+                "bd", "ph", "sand", "silt", 
+                "ch_net_dist", "hs", "elev", 
+                "rsp", "slope", "aspect", 
+                "ls", "plan_curv")
+
+join.tbl <- full.df
+
+DEBUG <- F
+for (i in seq_len(length(var.path.v))) {
+  path.tmp <- paste0(dat.wd, var.path.v[i]) # assemble path
+  if(DEBUG) {cat(paste0("\npath.tmp : ", path.tmp))}
+  dat.tmp <- read_stars(path.tmp) %>% setNames(var.name.v[i]) %>% as_tibble() # read and convert to tibble
+  if(DEBUG) {cat(paste0("\n\tjoining..."))}
+  join.tbl <- left_join(join.tbl, dat.tmp, by=c("x", "y")) # join covar data
+}
+
+# check for NA values
+n.vars <- colnames(join.tbl) %>% length()
+for (j in seq_len(n.vars)) {
+  subs.v <- join.tbl[,j] %>% as_vector()
+  count.na <- sum(is.na(subs.v))
+  cat(paste0("\nColumn ", j, " : ", colnames(join.tbl)[j], "\n\t contains : ", count.na, " NA vals"))
+}
+
+full.tbl <- join.tbl %>% drop_na()
+
+# sum(join.tbl$wilt) # 550 wilt pixels to start
+# sum(full.tbl$wilt) # 550 remaining after dropping NA vals
+
+save(full.tbl, file=paste0(this.wd, "clean_data/merge/full_tbl.Rds"))
+```
+
+### for each pixel, identify number of wilt points in training period [2004, 2018] vs testing period [2019, 2021]
+
+```{r}
+load(paste0(this.wd, "clean_data/merge/full_tbl.Rds")) # loads as full.tbl
+
+# identify indices where wilt is present - n = 550 
+wilt.ind <- which(full.tbl$wilt == 1)
+
+# split wilt pts into training and testing
+wilt.pts <- st_read(paste0(dat.wd, "comb_points/comb_points.shp"))
+assert_that(st_crs(wilt.pts) == st_crs(3071))
+train.sf <- wilt.pts %>% filter(is.na(year) | year < 2019) # train sf
+test.sf <- wilt.pts %>% filter(!is.na(year) & year >= 2019) # test sf
+assert_that( (nrow(train.sf) + nrow(test.sf)) == nrow(wilt.pts) )
+
+# setup
+train.ct.v <- c()
+test.ct.v <- c()
+total.ct.v <- c()
+DEBUG <- F
+# for each index where wilt present...
+for (i in wilt.ind) {
+  if(DEBUG) {cat(paste0("\n i = ", i))} # debug print
+  coords.tmp <- full.tbl[i, c("x", "y")] # extract coords
+  if(DEBUG) {cat(paste0("\n\tcoords = ", toString(coords.tmp)))} # debug print
+  sf.pt.tmp <- st_as_sf(coords.tmp, crs=st_crs(3071), coords=c("x", "y")) # construct sf point from coords
+  pt.buff.tmp <- sf.pt.tmp %>% st_buffer(dist=15, endCapStyle="SQUARE") # construct 15 m square buffer from pixel center
+  if(DEBUG) {cat(paste0("\n\t\tbuffer constructed..."))}
+  # extract count of train pts, save
+  train.pts.ctns <- st_contains(pt.buff.tmp, train.sf) # any training wilt points contained in buffer
+  l1.tmp <- length(unlist(train.pts.ctns))
+  train.ct.v <- c(train.ct.v, l1.tmp)
+  if(DEBUG & (l1.tmp > 0)) {cat(paste0("\n\tTRAIN COUNT = ", l1.tmp))}
+  # extract count of test pts, save
+  test.pts.ctns <- st_contains(pt.buff.tmp, test.sf) # any test wilt points contained in buffer\
+  l2.tmp <- length(unlist(test.pts.ctns))
+  test.ct.v <- c(test.ct.v, l2.tmp)
+  if(DEBUG & (l2.tmp > 0)) {cat(paste0("\n\tTEST COUNT = ", l2.tmp))}
+  # combine counts, save
+  ct.tmp <- l1.tmp + l2.tmp
+  total.ct.v <- c(total.ct.v, ct.tmp)
+  if(DEBUG) {cat(paste0("\n\n\t\tmoving on..."))}
+}
+
+cts.tbl <- tibble(ind = wilt.ind, train.ct = train.ct.v, test.ct = test.ct.v, total.ct = total.ct.v)
+
+# cts.tbl much smaller than our data tbl - need to extract each ind to larger tibble
+```
+
+### add wilt counts (testing, training, total) to data
+
+```{r}
+join.cts.tbl <- full.tbl %>% 
+  add_column(wilt_ct = 0, wilt_train = 0, wilt_test = 0) %>% 
+  relocate(c(wilt_ct, wilt_train, wilt_test), .after=wilt)
+
+DEBUG <- F
+for(i in seq_len(nrow(cts.tbl))) {
+  if(DEBUG) {cat(paste0("\ni = ", i))}
+  wilt.ct.tmp <- cts.tbl$total.ct[i]
+  train.ct.tmp <- cts.tbl$train.ct[i]
+  test.ct.tmp <- cts.tbl$test.ct[i]
+  
+  ind.tmp <- cts.tbl$ind[i]
+  if(DEBUG) {cat(paste0("\n\tind.tmp = ", ind.tmp))}
+  join.cts.tbl$wilt_ct[ind.tmp] <- wilt.ct.tmp
+  join.cts.tbl$wilt_train[ind.tmp] <- train.ct.tmp
+  join.cts.tbl$wilt_test[ind.tmp] <- test.ct.tmp
+  if(DEBUG) {cat(paste0("\n\t\ttotal = ", wilt.ct.tmp, "\n\t\ttrain = ", train.ct.tmp, "\n\t\ttest = ", test.ct.tmp))}
+}
+
+assert_that( sum(join.cts.tbl$wilt_ct) == ( sum(join.cts.tbl$wilt_test) + sum(join.cts.tbl$wilt_train) ) )
+
+save(join.cts.tbl, file=paste0(this.wd, "clean_data/merge/join_cts_tbl.Rds"))
+
+```
+**join.cts.tbl** is the last source of data before filtering to study area
+
+### subset modeling populations:
+
+ 1. HP3-GAM : Oak pixels in study area that are not on private land or water
+ 
+ 2. CPM : keep all pixels in study area, but want to somehow flag surveyed land - surveyed is non-private, non-water
+
+```{r}
+oak.dat.scale <- join.cts.tbl %>% 
+  rename(wilt_bool = wilt) %>% 
+  filter(sa==1, oak==1, priv==0, water==0) %>% 
+  select(-oak, -sa, -priv, -water, -wl2_cls) %>% 
+  mutate(across(.cols=!c(wilt_bool, wilt_ct, wilt_train, wilt_test), scale))
+
+save(oak.dat.scale, file=paste0(this.wd, "clean_data/model_data/oak_dat_scale.Rds"))
+
+pop.dat.scale <- join.cts.tbl %>% 
+  rename(wilt_bool = wilt) %>% 
+  filter(sa == 1) %>% 
+  mutate(surv_bool = as.numeric(priv==0 & water==0),
+         pine_bool = as.numeric( wl2_cls ==  4120),
+         aspbirch_bool = as.numeric (wl2_cls == 4210) ) %>% 
+  relocate(c(surv_bool, pine_bool, aspbirch_bool), .before=x) %>% 
+  select(-sa, -priv, -water, -wl2_cls) %>% 
+  mutate( across(!c(wilt_bool, wilt_ct, wilt_train, wilt_test, oak, surv_bool, pine_bool, aspbirch_bool), scale) )
+
+save(pop.dat.scale, file=paste0(this.wd, "clean_data/model_data/pop_dat_scale.Rds"))  
+```
+
+
+
+
+
+# Misc
+
+**Checking some questions about the data**
+
+### Distribution of WL2 classes in SA
+
+```{r}
+full.tbl %>% filter(sa==1) %>% mutate(wl2_cls = as.factor(wl2_cls)) %>% ggplot() + geom_bar(aes(x=wl2_cls))
+```
+4120 - pine
+4210 - aspen/paper birch
+4230 - oak
+4250 - northern hardwoods
+5000 - water
+6410 - conifer wetland
+6420 - aspen wetland
+6450 - mixed wetland
+
+### Distribution of oak_prob among wilt points & non-wilt points
+
+```{r}
+full.tbl %>% filter(oak_prob > 0, wilt == 1) %>% ggplot() + geom_histogram(aes(x=oak_prob), bins=40)
+```
+Compared to full distribution of oak_prob
+
+```{r}
+full.tbl %>% filter(oak_prob > 0) %>% ggplot() + geom_histogram(aes(x=oak_prob), bins=40)
+```
+
+### Spatial distribution of Wilt points with oak_prob visualized
+
+```{r}
+sa.shp <- st_read(paste0(dat.wd, "study_area/may_15_SA.shp"))
+full.tbl %>% filter(wilt==1) %>% ggplot() + geom_point(aes(x=x,y=y,color=oak_prob)) + geom_sf(data=sa.shp, color="red", fill=NA, alpha=0.3)
+```
+
+### Effect of filtering to Oak pixels - what is excluded?
+
+```{r}
+full.tbl %>% filter(wilt==1, oak==0, sa==1) %>% summarise(count = n()) # by filtering to only oak pixels, we're throwing out 46 points in study area
+full.tbl %>% filter(wilt==1, oak==0, sa==1) %>% mutate(wl2_cls = as.factor(wl2_cls)) %>% ggplot() + geom_bar(aes(x=wl2_cls)) + labs(title="Wilt Pixels not classified Oak")
+```
+
+**41.. = Conifers**
+4120 = Pine (***)
+4130 = Hemlock hardwoods
+
+**42.. = Broad-leaved deciduous**
+4210 = aspen/paper birch
+4220 = red maple
+4250 = northern hardwoods
+
+**64.. = forested wetland**
+6410 = conifer wetland
+6450 = mixed deciduous / coniferous wetland
+
+***
+
+***
+
+### Wiscland2 water vs USFS water
+
+```{r}
+wl2.water <- full.tbl %>% filter(sa == 1, wl2_cls == 5000) 
+usfs.water <- full.tbl %>% filter(sa == 1, water == 1)
+ggplot() + 
+  geom_point(data=wl2.water, aes(x=x,y=y), color="blue", alpha=0.5) +
+  geom_point(data=usfs.water, aes(x=x,y=y), color="green", alpha=0.1)
+```
+
