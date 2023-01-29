@@ -1,5 +1,8 @@
 # Raw data files
 raw_data/*
+mid_data/*
+*.mxd
+docs/*
 
 # History files
 .Rhistory
