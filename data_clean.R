@@ -4,9 +4,9 @@ rm(list=ls())
 gc()
 #
 # SET PATH TO THIS FOLDER IF NOT USING RPROJECT
-#
 this.wd <- "D:/Backed Up/Desktop/wilt_modeling/"
-
+#
+#
 { # load packages
 library(tidyverse)
 library(assertthat)
@@ -50,20 +50,28 @@ st_write(pts.comb, dsn=paste0(mid.wd, "ow_pts_comb.shp"))
 # rasterize counts onto grid templates
 
 {
-grd.temp.10 <- terra::rast("mid_data/grd_template_10.tif")
-ow.pts.comb <- terra::vect("mid_data/ow_pts_comb.shp")
+grd.temp.10 <- terra::rast("mid_data/grid/grd_template_10.tif")
+ow.pts.comb <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
 ow.rast.10 <- terra::rasterizeGeom(ow.pts.comb, grd.temp.10, fun="max")
 #plot(ow.rast.10)
 max(values(ow.rast.10), na.rm=T)
-terra::writeRaster(ow.rast.10, filename="mid_data/ow_rast_10.tif", overwrite=T)
+terra::writeRaster(ow.rast.10, filename="mid_data/wilt/ow_rast_10.tif", overwrite=T)
   
-grd.temp.30 <- terra::rast("mid_data/grd_template.tif")
+grd.temp.30 <- terra::rast("mid_data/grid/grd_template.tif")
 ow.rast.30 <- terra::rasterizeGeom(ow.pts.comb, grd.temp.30, fun="max")
 max(values(ow.rast.30), na.rm=T)
 terra::writeRaster(ow.rast.30, filename="mid_data/ow_rast_30.tif", overwrite=T)  
 }
 
-
+{ # construct buffer
+  ow.pts.comb <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
+  ow.pts.buff <- terra::buffer(ow.pts.comb, width=1200)
+  plot(ow.pts.buff)
+  grd.temp.10 <- terra::rast("mid_data/grid/grd_template_10.tif")
+  ow.pts.buff.rast <- terra::rasterize(ow.pts.buff, grd.temp.10)
+  plot(ow.pts.buff.rast)
+  terra::writeRaster(ow.pts.buff.rast, filename="mid_data/wilt/wilt_buff_rast.tif", overwrite=T)
+}
 
 #
 ######## WiscLand2 Data ##########
@@ -120,20 +128,38 @@ rm(list=ls())
 gc()
 {
 grd.template <- terra::rast("mid_data/grid/grd_template.tif")
+grd.template.10 <- terra::rast("mid_data/grid/grd_template_10.tif")
 cnnf.manage <- terra::vect("raw_data/manage_areas/CNNF_Management_Areas.shp")
 # create and save tibble of ma code descriptions
-macode.tbl <- tibble(
-  ind = 1:24,
+macode.pre.tbl <- tibble(
   MA = unique(cnnf.manage$MA),
   MA_descrip = unique(cnnf.manage$MA_DESCRIP)
 )
-saveRDS(macode.tbl, file="mid_data/manage/macode_tbl.Rds")
 manage.rast <- terra::rasterize(cnnf.manage, grd.template, field="MA")
+manage.rast.10 <- terra::rasterize(cnnf.manage, grd.template.10, field="MA")
 plot(manage.rast)
+plot(manage.rast.10)
 values(manage.rast)[,1]
 terra::writeRaster(manage.rast, filename="mid_data/manage/manage_rast.tif")
+terra::writeRaster(manage.rast.10, filename="mid_data/manage/manage_rast_10.tif")
 }
 
+{# construct ma code tbl
+v.tmp <- values(manage.rast)[,1]
+c.tmp <- crds(manage.rast)
+ma.tbl <- tibble(
+  x = c.tmp[,1],
+  y = c.tmp[,2],
+  val = v.tmp[!is.na(v.tmp)]
+) |> arrange(desc(y), x  )
+u.vals <- unique(ma.tbl$val)
+ma.code.correct <- tibble(
+    ind = u.vals, 
+    MA = levels(manage.rast)[[1]][u.vals+1]
+  ) |> 
+  left_join(macode.pre.tbl)
+saveRDS(ma.code.correct, file="mid_data/manage/macode_tbl.Rds")
+}
 #
 ######## GW Depth ##########
 rm(list=ls())
@@ -172,17 +198,89 @@ terra::writeRaster(dem30, filename="raw_data/Wilt_DEM_30.tif")
 
 #
 ######## CREATE EXPLORE DATA ##########
+
+
+# define study area as a subset of the larger grid (as matrix of coordinates)
+# start with everything that is inside the 500 m buffer
+# then -> has to be oak
+# then -> exclude private land
+
+# ow.pts.buff <- terra::vect("mid_data/wilt/ow_pts_comb.shp") |> 
+#   terra::buffer(500) #|> 
+#view <- terra::geom(ow.pts.buff) |> as_tibble()
+#ow.buff.500 <- aggregate(ow.pts.buff)
+#terra::writeVector(ow.buff.500, filename="mid_data/wilt/ow_buff_500.shp")
+{
 rm(list=ls())
 gc()
+ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp") # read points
+ow.pts.500buff <- ow.pts |> # construct buffer and aggregate
+  buffer(width=500) |> 
+  aggregate()
+# terra::writeVector(ow.pts.500buff, filename="mid_data/wilt/ow_pts_500buff.shp") # write
+grd.tmp <- terra::rast("mid_data/grid/grd_template_10.tif")
+mask.ow.buff <- terra::mask(grd.tmp, ow.pts.500buff)
+plot(mask.ow.buff)
+rm(grd.tmp, ow.pts, ow.pts.500buff)
+gc()
+}
+# plot(mask.ow.buff)
+# need to use values(mask.ow.buff)[!is.na(values(mask.ow.buff))][extr.ind]
 
+{ # mask by oak
+wl2.rast <- terra::rast("mid_data/wiscland2/wl2_crop.tif")
+extr.wl2 <- terra::extract(wl2.rast, crds(mask.ow.buff)) # extract values of wl2 at each mask.ow.buff point
+rm(wl2.rast)
+gc()
+extr.wl2 |> str() # returns 813,143 values - 1 for each cell in mask.ow.buff that == 1
+extr.ind <- which(extr.wl2[,1] != 4230) # identify indices of points where something not oak was extracted - there are ~369k such indices out of the ~813k in extr.wl2
+extr.ind |> length()
+values(mask.ow.buff)[!is.na(values(mask.ow.buff))][extr.ind] <- NA # crop values where not oak
+plot(mask.ow.buff)
+rm(extr.ind, extr.wl2)
+gc()
+}
+
+{ # mask by private land
+manage.rast <- terra::rast("mid_data/manage/manage_rast_10.tif")
+extr.manage <- terra::extract(manage.rast, crds(mask.ow.buff))
+extr.manage |> str() # df 443338 x 1
+levels(extr.manage$MA)
+extr.ind <- which( extr.manage[,1] %in% c("O", "T", "W") ) # identifying indices of points where something not USFS was extracted
+values(mask.ow.buff)[!is.na(values(mask.ow.buff))][extr.ind] <- NA
+plot(mask.ow.buff)
+terra::writeRaster(mask.ow.buff, filename="mid_data/study_area/sa_base.tif")
+sa.base <- mask.ow.buff
+rm(mask.ow.buff, extr.manage, extr.ind, manage.rast)
+gc()
+}
+
+
+
+#macode.tbl <- readRDS(file="mid_data/manage/macode_tbl.Rds")
+#macode.tbl |> arrange(MA)
 # want a dataframe capturing the full shebang - e.g. at 10 m and 30 m
 # will then crop the dataframe based on something external determining SA
 
 # 10 m
-{}
-grd.temp.10 <- terra::rast("mid_data/grid/grd_template_10.tif")
+
+
 
 # loop over mid_data - skip grid
 # for each .tif file that's not in exclude list
 
 source("functions/join_data_.R")
+sa.base <- rast("mid_data/study_area/sa_base.tif")
+{
+  i = 4
+  j = 1
+  verbose = T
+  DBG = T
+  base.grd = sa.base
+  fold.skip=c("saga_30", "manage", "study_area")
+  var.skip = c("gw_no_smooth", "gw_smooth_cubic", "ow_rast_30", "wilt_buff_rast")
+}
+tst <- join_data_(
+  base.grd = sa.base, 
+  fold.skip=c("saga_30", "manage", "study_area"), 
+  var.skip = c("gw_no_smooth", "gw_smooth_cubic", "ow_rast_30", "wilt_buff_rast"))

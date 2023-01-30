@@ -2,12 +2,12 @@ require(crayon)
 #'
 #'
 #'
-join_data_ <- function(base.grd, verbose=T, DBG=T) {
+join_data_ <- function(base.grd, fold.skip, var.skip, verbose=T, DBG=T) {
   if(verbose) cat("\nJOINING DATA...")
   
   # generate folders - exclude .mxd
-  mid.fold.raw <- list.files(path="mid_data")
-  mid.fold <- str_remove_all(mid.fold.raw, pattern="(.mxd)")
+  mid.fold <- list.files(path="mid_data")
+  skip <- which(str_detect(mid.fold, pattern="(.mxd)") )
   if(DBG) {
     cat("\n\tmid_data folders = ")
     cat(crayon::blue(mid.fold, collapse = "    "))
@@ -15,7 +15,7 @@ join_data_ <- function(base.grd, verbose=T, DBG=T) {
   
   # loop over folders
   for(i in seq_along(mid.fold)) {
-    if(mid.fold[i] == "grid") next # skip grid folder
+    if(i %in% skip | mid.fold[i] == "grid" | mid.fold[i] %in% fold.skip) next # skip grid folder
     if(verbose) cat(paste0("\n\n\tfolder = ", mid.fold[i], "\t(i = ", i, ")"))
     nest.fls.tmp <- list.files(path = paste0("mid_data/", mid.fold[i]))
     nest.fls.clean <- nest.fls.tmp[str_detect(nest.fls.tmp, pattern="(.tif$)")] # remove files that don't end in .tif
@@ -25,33 +25,38 @@ join_data_ <- function(base.grd, verbose=T, DBG=T) {
     }
     # loop over filenames that DO end in .tif - read each, resample it to the base grid (base.grd) appropriately
     for(j in seq_along(nest.fls.clean)) {
-      fl.read.tmp <- paste0( "mid_data/", mid.fold[i], "/", nest.fls.clean[j] )
-      if(DBG) cat(paste0("\n\t\t\tfl.read.tmp = ", fl.read.tmp))
-      # determine behavior based on type stored
-      tif.tmp <- terra::rast(fl.read.tmp)
-      type.tmp <- values(tif.tmp)[,1] |> class()
-      if(DBG) cat(paste0("\n\t\t\t\tTYPE = ", toString(type.tmp)))
-      # resample onto grid
+      nest.fl.tmp <- nest.fls.clean[j]
+      var.tmp <- nest.fl.tmp |> str_remove(pattern=".tif")
+      if(var.tmp %in% var.skip) next
+      # project base.grd to foreign crs if necessary
+      fl.read.tmp <- paste0( "mid_data/", mid.fold[i], "/", nest.fls.clean[j] ) # assemble file path
+      if(DBG) cat(paste0("\n\t\t\tfl.read.tmp = ", fl.read.tmp, "\tvar.tmp = ", var.tmp, "\n\t\t\t\tmasking...")) # dbg print
+      rast.tmp <- terra::rast(fl.read.tmp) # read file
+      if(crs(rast.tmp) != crs(base.grd)) {
+        cat(paste0("\n\ncrs of rast = ", paste0(crs(rast.tmp), collapse=" ")))
+        base.grd.tmp <- base.grd |> 
+          terra::project(crs(rast.tmp))
+      } else {
+        base.grd.tmp <- base.grd
+      }
+      if(DBG) cat(paste0("\n\t\t\t\textracting..."))
+      extr.vals <- extract(rast.tmp , crds(base.grd.tmp) )
+      write.inds <- which( !is.na(values(base.grd)) )
+      base.grd[[var.tmp]] <- 0
+      base.grd[[var.tmp]][write.inds] <- extr.vals
+      rm(rast.tmp, extr.vals, write.inds)
+      gc()
     }
   }
-  
+  return(base.grid)
 }
 
 # test
-grd.temp.10 <- terra::rast("mid_data/grid/grd_template_10.tif")
-join_data_(base.grd = grd.temp.10)
+#grd.temp.10 <- terra::rast("mid_data/grid/grd_template_10.tif")
+
 #tst.fls <- list.files("mid_data/groundwater/")
 #str_detect(tst.fls, pattern="(.tif$)")
 # tif.tst1 <- terra::rast("mid_data/groundwater/gw_no_smooth.tif")
 # str(values(tif.tst1))
 # values(tif.tst1)[,1] |> class()
-tif.tst2 <- terra::rast("mid_data/manage/manage_rast.tif")
-v.tmp <- values(tif.tst2)[,1]
-c.tmp <- crds(tif.tst2)
-tst.tbl <- tibble(
-  x = c.tmp[,1],
-  y = c.tmp[,1],
-  val = v.tmp[!is.na(v.tmp)]
-) |> arrange(desc(y), x  )
 
-tst.tbl |> arrange(x, desc(y) )
