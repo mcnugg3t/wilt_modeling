@@ -1,7 +1,7 @@
 
 {
-rm(list=ls())
-gc()
+  rm(list=ls())
+  gc()
 }
 
 {
@@ -14,47 +14,48 @@ gc()
 # load data (1) all covariates in raster stack: 10 m x 10 m grid with 1200 m buffer 
 #           (2) shapefile of all oak wilt points
 {
-dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
-ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
+  #dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
+  dat.tmp <- terra::rast("clean_data/joindat_30_1200.tif")
+  ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
 }
 
 # construct spatstat objects
 { 
-# study area bit-mask is one of the layers in the raster stack
-study.area <- dat.10[["study area"]]
-# convert study area raster object to dataframe with coordinates
-sa.df <- study.area |> 
-  as.data.frame(xy=T)
-# construct spatstat owin object 
-ext.sa <- ext(study.area)
-ow.win.10 <- owin(
-  xrange = c(ext.sa[1], ext.sa[2]),
-  yrange = c(ext.sa[3], ext.sa[4]),
-  mask = sa.df[,1:2]
+  #study.area <- dat.tmp[["study area"]]
+  study.area <- dat.tmp[["study area"]]
+  # convert study area raster object to dataframe with coordinates
+  sa.df <- study.area |> 
+    as.data.frame(xy=T)
+  # construct spatstat owin object 
+  ext.sa <- ext(study.area)
+  ow.win <- owin(
+    xrange = c(ext.sa[1], ext.sa[2]),
+    yrange = c(ext.sa[3], ext.sa[4]),
+    mask = sa.df[,1:2]
   )
-# construct spatstat ppp object
-ow.crds <- crds(ow.pts)
-ow.ppp <- ppp(x = ow.crds[,1], y = ow.crds[,2], window = ow.win.10) # 59 points outside of window + some duplicated
+  # extract coordinates
+  ow.crds <- crds(ow.pts)
+  # construct spatstat ppp object
+  ow.ppp <- ppp(x = ow.crds[,1], y = ow.crds[,2], window = ow.win) # 59 points outside of window + some duplicated
 }
 #
+# nrow(sa.df) # 676.5k rows
 
-# construct density and kppm objects
+# construct density object
 {
-ow.dens <- density(ow.ppp, sigma=150)
-#ow.kppm.thom <- kppm(ow.ppp, clusters="Thomas", rmax=1000)
-#ow.kppm.cauch <- kppm(ow.ppp, clusters="Cauchy", rmax=1000)
-#ow.kppm.vargam <- kppm(ow.ppp, clusters="VarGamma", rmax=1000)
+  ow.dens <- density(ow.ppp, sigma=150)
+}
+
+{
+  x.v <- seq(-300, 300, by=1)
+  y.v <- dnorm(x.v, mean=0, sd=150)
+  plot(x.v, y.v)
 }
 
 # plot
-{
-  plot(ow.dens)
-  plot(ow.dens^(1/2))
-  plot(ow.dens^(2/3))
-  #ow.kppm.cauch |> predict() |> plot()
-  # plot((ow.dens)^(1/2))
-  # plot(log.dens)
-}
+plot(ow.dens)
+plot(ow.dens^(2/3))
+plot(ow.dens^(1/2))
 
 # kernel density -> tibble, normalize, resample onto study area -> data.frame
 {
@@ -96,7 +97,7 @@ gc()
   }
 }
 
-# extract covariate values from data, compute mean and sd of each
+# extract covariate values from data, compute mean and sd of each, store it
 {
   # init empty tibble
   store.tbl <- tibble(
@@ -106,7 +107,7 @@ gc()
   )
   # for each sample of indices
   for(i in seq_along(s.list)) {
-    cat(paste0("\n\014", round(i/length(s.list), 3)*100, " %"))
+    cat(paste0("\n\014extracting covariates : ", round(i/length(s.list), 3)*100, " %"))
     s.tmp <- s.list[[i]] # extract sample vector
     crds.mat <- ow.adj.tbl |> # get coords associated 
       slice(s.tmp) |>  
@@ -114,9 +115,10 @@ gc()
       as.matrix()
   
   # extract values from dat.10
-  dat.subs <- terra::extract(dat.10, crds.mat) |> 
+  dat.subs <- terra::extract(dat.tmp, crds.mat) |> 
     as_tibble() |> 
-    select(-`study area`, -manage_rast_10, -wl2_cls_10)
+    select(-`study area`, -manage_rast_30, -wl2_cls_30) |> 
+    as.matrix()
   
   # calc mean and sd of each variable
   mean.v <- apply(dat.subs, MARGIN=2, FUN=mean, na.rm=T)
@@ -137,7 +139,7 @@ gc()
 #   3. group and compute center + scale params
 {
   tbl.tmp <- store.tbl |>
-    filter(var != "ow_rast_10") 
+    filter(var != "ow_rast_30") 
   store.tbl.2 <- tbl.tmp |> 
     add_column(ind = 1:nrow(tbl.tmp)) |> 
     pivot_longer(cols=2:3, names_to=c("stat"), values_to="val") |> 
@@ -158,13 +160,13 @@ gc()
 
   # calc observed covar mean and sd
   obs.dat <- terra::extract(
-    x = dat.10, 
+    x = dat.tmp, 
     y = ow.crds
   )
 
   obs.samp <- obs.dat |> 
     as_tibble() |> 
-    select(-`study area`, -manage_rast_10, -wl2_cls_10, -ow_rast_10)
+    select(-`study area`, -manage_rast_30, -wl2_cls_30, -ow_rast_30)
 
   obs.mu <- apply(obs.samp, MARGIN=2, FUN=mean, na.rm=T)
   obs.sd <- apply(obs.samp, MARGIN=2, FUN=sd, na.rm=T)
