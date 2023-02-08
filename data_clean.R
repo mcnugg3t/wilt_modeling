@@ -1,7 +1,10 @@
 
 ######## INIT ##########
-rm(list=ls())
-gc()
+{
+  rm(list=ls())
+  gc()
+}
+
 { # load packages
 library(tidyverse)
 library(assertthat)
@@ -247,8 +250,10 @@ for(grd in c(10, 30)) {
   gc()
   source("functions/define_study_area_.R")
   {
-    define_study_area_(grd.int = 10, buffer.dist = 1200, verbose=T, DBG=T)
-    define_study_area_(grd.int = 30, buffer.dist = 1200, verbose=T, DBG=T)
+    define_study_area_(grd.int = 10, wilt.buffer.dist = 1200, oak.buffer.dist=50, verbose=T, DBG=T) 
+    # n.cells go 1.8 mil -> 1.2 mil -> 1 mil
+    define_study_area_(grd.int = 30, wilt.buffer.dist = 1200, oak.buffer.dist=50, verbose=T, DBG=T)
+    # n.cells go 200k -> 147k -> 121k
   }
   
   {
@@ -291,25 +296,62 @@ for(grd in c(10, 30)) {
   }
   
 }
-# define study area
 
-  
-
-
-
-
-
-tst.rast <- rast("mid_data/wiscland2/wl2_cls_prob.tif")
-crs(tst.rast) == crs(sa.base)
-
-tst <- tst.rast |> resample(sa.base) |> mask(sa.base)
-
+# create separate shapefiles storing currently included and excluded wilt points
+#
 {
-  i = 4
-  j = 1
-  verbose = T
-  DBG = T
-  base.grd = sa.base
-  fold.skip= c("grid", "saga_30", "manage", "study_area")
-  var.skip = c("gw_no_smooth", "gw_smooth_cubic", "ow_rast_30", "wilt_buff_rast")
+  ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
+  dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
+  wl2.dat <- dat.10[["wl2_cls_10"]]
+  rm(dat.10)
+  gc()
+  ow.pts <- ow.pts |> 
+    project(crs(wl2.dat))
+  assert_that(crs(ow.pts) == crs(wl2.dat))
+  extr.tst <- terra::extract(wl2.dat, ow.pts)
+  is.incl.ind <- which(!is.na(extr.tst$wl2_cls_10 ) )
+  ow.pts.clean <- ow.pts[is.incl.ind, ]
+  ow.pts.excl <- ow.pts[-is.incl.ind, ]
+  
+  terra::writeVector(ow.pts.clean, filename="clean_data/ow_pts_clean.shp", overwrite=T)
+  terra::writeVector(ow.pts.excl, filename="clean_data/ow_pts_excl.shp", overwrite=T)
+  
+  wl2.full.dat <- terra::rast("mid_data/10/wiscland2/wl2_cls_10.tif")
+  ow.pts.2 <- ow.pts.excl |> 
+    project(crs(wl2.full.dat))
+  assert_that(crs(wl2.full.dat) == crs(ow.pts.2))
+  excl.pts.cls <- terra::extract(wl2.full.dat, ow.pts.2)
+  excl.pts.cls |> 
+    as_tibble() |>  
+    group_by( wiscland2_level3 ) |> 
+    summarise(count = n()) |> 
+    arrange(desc(count))
+  
+}
+
+# what is the distribution of distance to oak forest among excluded points
+{
+  clean.dat <- terra::rast("clean_data/joindat_10_1200.tif")
+  wl2.dat <- clean.dat[["wl2_cls_10"]]
+  rm(clean.dat)
+  gc()
+  ow.pts.excl <- terra::vect("clean_data/ow_pts_excl.shp")
+  ow.pts.excl <- ow.pts.excl |> 
+    project(crs(wl2.dat))
+  assert_that(crs(ow.pts.excl) == crs(wl2.dat))
+  
+  tst.poly <- as.polygons(wl2.dat)
+  tst.dist <- distance(ow.pts.excl, tst.poly)
+  dist.dat <- tst.dist |> 
+    as_tibble() |> 
+    rename(dist = 1) 
+  dist.dat |> 
+    ggplot(aes(x=dist)) + geom_histogram()
+  
+  cutoff <- 50 
+  n.cutoff <- dist.dat |> 
+    filter(dist <= cutoff) |> 
+    nrow()
+  prop <- n.cutoff/nrow(dist.dat)
+  cat(crayon::bgRed("Prop = ", prop, "\tcutoff = ", cutoff))
 }
