@@ -1,17 +1,18 @@
 
+##
+## INIT
 {
   rm(list=ls())
   gc()
-}
-
-{
   library(spatstat)
   library(terra)
   library(tidyverse)
   library(assertthat)
 } |> suppressPackageStartupMessages()
 
-{
+##
+## 0 - construct spatstat ppp objects and save
+{ 
   dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
   dat.30 <- terra::rast("clean_data/joindat_30_1200.tif")
   ow.pts <- terra::vect("clean_data/ow_pts_clean.shp")
@@ -24,8 +25,8 @@
   saveRDS(ow.ppp.10, file="clean_data/ow_ppp_10.Rds")
   saveRDS(ow.ppp.30, file="clean_data/ow_ppp_30.Rds")
 }
-
-# 1 - Besag's L-function : estimate + gradient
+##
+## 1 - Besag's L-function : estimate + gradient
 {
   ow.ppp <- readRDS("clean_data/ow_ppp.Rds")
   L.res <- Lest(ow.ppp, correction="translation")
@@ -41,76 +42,159 @@
     ggplot(aes(x=r, y=val, color=type)) + geom_smooth(span=0.10)
 }
 
-# generate densities across parameter grid
-# move to its own function
+##
+## 2 - generate densities across parameter grid
 {
-  # setup
-  rm(list=ls())
-  gc()
-  
-  kern.v <- c("bw.ppl", "bw.diggle")
-  ow.ppp.30 <- readRDS("clean_data/ow_ppp_30.Rds")
-  
-  source("functions/est_bandwidth_.R")
-  bw.res <- est_bandwidth_(kern.v, ow.ppp.30, verbose=T)
-  saveRDS(bw.res, file="clean_data/bw_res_30.Rds")
-  
-  ow.ppp.10 <- readRDS("clean_data/ow_ppp_10.Rds")
-  bw.res <- readRDS("clean_data/bw_res_30.Rds")
-  adjust.v <- c(0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4)
-  
-  source("functions/generate_densities_.R")
-  generate_densities_(
-    ow.ppp = ow.ppp.10,
-    bw.list = bw.res,
-    adj.v = adjust.v
-    )
-  
+  #
+  # estimate bandwidth using 30-m x 30-m quadrature scheme
+  { 
+    rm(list=ls())
+    gc()
+    kern.v <- c("bw.ppl", "bw.diggle")
+    ow.ppp.30 <- readRDS("clean_data/ow_ppp_30.Rds")
+    source("functions/est_bandwidth_.R")
+    bw.res <- est_bandwidth_(kern.v, ow.ppp.30, verbose=T)
+    saveRDS(bw.res, file="clean_data/bw_res_30.Rds")
+  }
+  #
+  # generate densities
+  { 
+    rm(list=ls())
+    gc()
+    ow.ppp.10 <- readRDS("clean_data/ow_ppp_10.Rds")
+    bw.res <- readRDS("clean_data/bw_res_30.Rds")
+    adjust.v <- c(0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4)
+    source("functions/generate_densities_.R")
+    generate_densities_(
+      ow.ppp = ow.ppp.10,
+      bw.list = bw.res,
+      adj.v = adjust.v
+      )
+  }
 }
 
-# from each density, create a list of point patterns
+##
+## 3 - from each density, create a list of point patterns
 {
-  ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
-  density.df <- readRDS("clean_data/density/bw.diggle/dens_adj_1.Rds") |> 
-    as.data.frame() |> 
-    mutate(val.old = value) |> 
-    mutate(value = if_else( ((0-value)^2)<0.1e-7, 0, value ),
-           value = value/sum(value, na.rm=T))
-  density.df$value |> sum()
-  density.df |> filter(value>0) |> nrow() # 3637 non-zero vals
+  #
+  # prep
+  {
+    rm(list=ls())
+    gc()
+    cln.dat <- terra::rast("clean_data/joindat_10_1200.tif") # load full clean data
+    ow.df <- cln.dat[["ow_rast_10"]] |>  # calc ow cell locations and counts
+      as.data.frame(xy=T) |> 
+      filter(ow_rast_10 > 0)
+    rm(cln.dat)
+    gc()
+    ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds") # load ppp
+    wilt.owin <- ow.ppp$window
+    fold.v <- list.files("clean_data/density/")
+  }
   
-  cln.dat <- terra::rast("clean_data/joindat_10_1200.tif")
-  ow.df <- cln.dat[["ow_rast_10"]] |> 
-    as.data.frame(xy=T) |> 
-    filter(ow_rast_10 > 0)
+  #
+  # big loop
+  {
   source("functions/create_ppps_.R")
-  ppp.list <- create_ppps_(
-    density.df,
-    ow.df,
-    n.sim=100,
-    owin.in = ow.ppp$window
-  )
-  
-  saveRDS(ppp.list, file="clean_data/ppp/ppp_test.Rds")
-  #plot(density.rast)
-  #plot(study.grid[["study area"]], add=T)
-  
-  
-  
+    for(i in seq_along(fold.v)) { # over the two folders
+      # prep
+      fold.tmp <- fold.v[i]
+      cat(paste0("\n\n\nfolder = ", fold.tmp))
+      fold.path <- paste0("clean_data/density/", fold.tmp, "/")
+      fls.tmp <- list.files(fold.path)
+      cat(paste0("\t\t\tfiles = ", paste0(fls.tmp, collapse="  ,  ")))
+      
+      for(j in seq_along(fls.tmp)) { # over each density file
+        # prep
+        fl.tmp <- fls.tmp[j]
+        cat(paste0("\n\n\nj = ", j, "\n\tfl.tmp = ", fl.tmp))
+        path.tmp <- paste0(fold.path, fl.tmp)
+        bw.num <- fl.tmp |> 
+          str_remove("dens_bw_") |> 
+          str_remove(".Rds") |> 
+          as.numeric() |> 
+          round(2)
+        save.tmp <- paste0("clean_data/sample/", fold.tmp, "/ppp_list_bw_", bw.num, ".Rds" )
+        cat(paste0("\n\tsave.tmp = ", save.tmp))
+        
+        # read density
+        cat(paste0("\n\treading density.df, na's -> 0..."))
+        density.tmp <- readRDS(path.tmp) |> 
+          as.data.frame() |> 
+          mutate(val.old = value) |> 
+          mutate(value = if_else(is.na(value), 0, value))
+        cutoff.tmp <- (0-density.tmp$value)^2 |> quantile(probs=c(0.6))
+        density.df <- density.tmp |> 
+          mutate(value = if_else( ((0-value)^2) < cutoff.tmp, 0, value), # if distance between 0 and value is < 60th_percentile, set to 0
+                 value = value/sum(value, na.rm=T))
+        n.dens = density.df |> filter(value > 0) |> nrow()
+        cat(paste0("\n\tcutoff = ", cutoff.tmp, "\n\tdensity val proportion remaining = ", round(n.dens/nrow(density.df), 3), " (", n.dens, ")"))
+        cat(crayon::bgMagenta("\tcreating ppp list..."))
+        ppp.list <- create_ppps_(
+          density.df,
+          ow.df,
+          n.sim=100,
+          owin.in = wilt.owin
+        )
+        cat("\n\t\tsaving...")
+        saveRDS(ppp.list, file=save.tmp)
+      }
+    }
+  }
 }
 
-# simulation envelope for L under
+# simulation envelope for L under:
 # 1 - inhomogeneous poisson
 # 2 - cox process
 {
-  ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
-  ppp.list <- readRDS("clean_data/ppp/ppp_test.Rds")
-  tst.envelope <- envelope(
-    ow.ppp, 
-    fun=Lest, 
-    funargs=list(correction="translation"),
-    simulate= ppp.list # list of point patterns
-    )
+  { # setup
+    rm(list=ls())
+    gc()
+    ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
+    fold.v <- list.files("clean_data/sample/")
+  }
+  
+  # loop over point patterns
+  for(i in seq_along(fold.v)) {
+    fold.tmp <- fold.v[i]
+    cat(crayon::bgBlue("\n\n\nfolder = ", fold.tmp))
+    cat("\n\tfiles : ")
+    fold.path <- paste0("clean_data/sample/", fold.tmp, "/")
+    files.tmp <- list.files(fold.path)
+    cat(paste0(files.tmp, collapse=" , "))
+    for(j in seq_along(files.tmp)) {
+      # setup
+      fn.tmp <- files.tmp[j]
+      fp.tmp <- paste0(fold.path, fn.tmp)
+      cat(paste0("\n\n\tj = ", j, "\tfl.tmp = ", fn.tmp))
+      bw.tmp <- fn.tmp |> 
+        str_remove("ppp_list_bw_") |> 
+        str_remove(".Rds")
+      save.tmp <- paste0("clean_data/envelope/", fold.tmp, "/envelope_", bw.tmp, ".Rds")
+      save.img <- paste0("clean_data/envelope/", fold.tmp, "/img_", bw.tmp, ".jpg")
+      cat(paste0("\n\t\tsave.tmp = ", save.tmp, "\n\t\tsave.img = ", save.img, "\n\t"))
+      #
+      cat(crayon::bgCyan("loading ppp list..."))
+      ppp.list.tmp <- readRDS(fp.tmp)
+      cat("\n\t")
+      cat(crayon::bgYellow("calc envelope...\n"))
+      envelope.tmp <- envelope(
+        ow.ppp, 
+        fun=Lest, 
+        funargs=list(rmax=700,correction="border"),
+        simulate= ppp.list.tmp # list of point patterns
+      )
+      cat("\n\t")
+      cat(crayon::bgWhite("saving plot..."))
+      jpeg(file=save.img)
+      envelope.tmp |> plot(main=paste0("process: ", fold.tmp, "  bandwidth: ", bw.tmp))
+      dev.off()
+      cat("\n\t")
+      cat(crayon::bgWhite("saving envelope..."))
+      saveRDS(envelope.tmp, file=save.tmp)
+      
+    }
+  }
 }
 
 # Fry plot locally + globally
@@ -119,143 +203,157 @@
 }
 
 #
-# compute surprisal for each kde
+# compute sampling distribution for each kde - both continuous and discrete variables
 #
 {
-  dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
-  source("functions/sample_kdes_.R")
-  sample_kdes_(
-    covar.rast = dat.10, 
-    n.sim=1e6, 
-    verbose=T, 
-    DBG=T)
+  # prep
+  {
+    rm(list=ls())
+    gc()
+    soils.df <- terra::vect("raw_data/cnnf_soil/CNNF_Soil_Layer_2.shp") |> 
+      as.data.frame() |> 
+      select(OBJECTID, SOIL_NAME, SLOPE_CLAS, EROSION_DI) |> 
+      rename(soils_rast = OBJECTID)
+    saveRDS(soils.df, file="mid_data/misc/soils_df.Rds")
+    dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
+  }
+  
+  #
+  {
+    source("functions/sample_kdes_.R")
+    sample_kdes_(
+      covar.rast = dat.10,
+      join.dat = soils.df,
+      n.sim=1e4, 
+      verbose=T, 
+      DBG=T)
+  }
 }
 
-# load data (1) all covariates in raster stack: 10 m x 10 m grid with 1200 m buffer 
-#           (2) shapefile of all oak wilt points
+{ # test results
+  sample.tst <- readRDS("clean_data/sample_dist/bw.diggle/samp_dist_bw_103.01.Rds")
+}
+
+##
+## Calculate surprisal distributions
 {
-<<<<<<< HEAD
-dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
-ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
-}
-
-# construct spatstat objects
-{ 
-# study area bit-mask is one of the layers in the raster stack
-study.area <- dat.10[["study area"]]
-# convert study area raster object to dataframe with coordinates
-sa.df <- study.area |> 
-  as.data.frame(xy=T)
-# construct spatstat owin object 
-ext.sa <- ext(study.area)
-ow.win.10 <- owin(
-  xrange = c(ext.sa[1], ext.sa[2]),
-  yrange = c(ext.sa[3], ext.sa[4]),
-  mask = sa.df[,1:2]
-  )
-# construct spatstat ppp object
-ow.crds <- crds(ow.pts)
-ow.ppp <- ppp(
-  x = ow.crds[,1], 
-  y = ow.crds[,2], 
-  window = ow.win.10) # 59 points outside of window + some duplicated
-dummy.scheme <- ppp(
-  x = sa.df$x, 
-  y = sa.df$y)
-ow.quad <- quadscheme(data=ow.ppp, dummy=dummy.scheme, method="grid")
-}
-#
-
-# construct density and kppm objects
-{
-ow.dens <- density(ow.ppp, sigma=150)
-#ow.kppm.thom <- kppm(ow.ppp, clusters="Thomas", rmax=1000)
-#ow.kppm.cauch <- kppm(ow.ppp, clusters="Cauchy", rmax=1000)
-#ow.kppm.vargam <- kppm(ow.ppp, clusters="VarGamma", rmax=1000)
-}
-
-# plot
-{
-  plot(ow.dens)
-  plot(ow.dens^(1/2))
-  plot(ow.dens^(2/3))
-  #ow.kppm.cauch |> predict() |> plot()
-  # plot((ow.dens)^(1/2))
-  # plot(log.dens)
-}
-
-# kernel density -> tibble, normalize, resample onto study area -> data.frame
-{
-ow.adj <- ow.dens^(2/3) |> 
-  as_tibble() |> 
-  mutate(val.norm = value/sum(value)) |> 
-  select(-value)
-ow.adj.rast <- rast(ow.adj, crs=crs(study.area) ) |> 
-  resample(study.area)
-ow.adj.tbl <- ow.adj.rast |> 
-  as.data.frame(xy=T)
-rm(ow.adj)
-gc()
-}
-
-# check density estimate
-{
-tst.sum <- values(ow.adj.rast)[!is.na(values(ow.adj.rast))] |> sum()
-assert_that(abs(tst.sum-1) < 0.0001)
-plot(ow.adj.rast[["val.norm"]])
-plot(ow.pts, cex=0.5, col=rgb(red=0, green=0, blue=0, alpha=0.3),  add=T)
-#rm(ow.adj.rast)
-gc()
-}
-
-# sample indices nsim times
-{
-  n.sim <- 1000
-  s.list <- list()
-  for(i in 1:n.sim) {
-    cat(paste0("\n\014", round(i/n.sim, 3)*100, " %"))
-    s.tmp <- sample(
-      x = 1:nrow(ow.adj.tbl), 
-      size = rpois(n=1, lambda=nrow(ow.crds)), 
-      replace=T,
-      prob=ow.adj.tbl$val.norm
+  
+  { # setup
+    rm(list=ls())
+    gc()
+    soils.dat.df <- readRDS("mid_data/misc/soils_df.Rds")
+    ow.pts.dat <- terra::rast("clean_data/joindat_10_1200.tif") |> 
+      as.data.frame() |>
+      filter(ow_rast_10 > 0) |> 
+      left_join(soils.dat.df) |> 
+      select(-`study area`, -soils_rast, -ow_rast_10)
+    var.v <- names(ow.pts.dat); var.v
+    source("functions/calc_surprisal_hist_.R")
+    source("functions/calc_surprisal_tab_.R")
+    return.dat <- tibble(
+      var = character(),
+      kernel = character(),
+      bw = numeric(),
+      surprisal = numeric()
     )
-    s.list[[i]] <- s.tmp
-=======
-  source("functions/var_explore_prep_.R")
-  
-  
-  for(i in seq_along(band.v)) {
-    band.tmp <- band.v[i]
-    cat(crayon::bgRed("\nbandwidth = ", band.tmp))
-    res <- var_explore_prep_(
-      rast.dat = dat.10, 
-      pts.dat = ow.pts, 
-      kern.band = band.tmp,
-      n.sim = 1000,
-      verbose = T, 
-      DBG = T
-      )
-    saveRDS(res, file=paste0("expl_data/res_", band.tmp, ".Rds") )
->>>>>>> f948557d8a03caed183afa4c97d699aeab02fc06
+    fold.v <- list.files("clean_data/sample_dist")
   }
+  
+  ##
+  ## BIG LOOP
+  { 
+    for(i in seq_along(fold.v)) { # loop over folders
+        fold.tmp <- fold.v[i]
+        fold.path.tmp <- paste0("clean_data/sample_dist/", fold.tmp, "/")
+        cat(paste0("\n\ni = ", i, "\tfolder = ", fold.tmp))
+        dens.files <- list.files(fold.path.tmp)
+        
+        for(j in seq_along(dens.files)) {
+          fn.tmp <- dens.files[j]
+          bw.tmp <- fn.tmp |> 
+            str_remove("samp_dist_bw_") |>
+            str_remove(".Rds") |> 
+            as.numeric()
+          cat(paste0("\n\n\tj = ", j, "\tfn.tmp = ", fn.tmp, "   bw = ", bw.tmp))
+          fp.tmp <- paste0(fold.path.tmp, fn.tmp)
+          
+          # read sampling dist file
+          sample.dist.tmp <- readRDS(fp.tmp)
+          #
+          
+          for(k in seq_along(var.v)) { # inner loop
+            var.tmp <- var.v[k]
+            cat("\n\t\t")
+            cat(crayon::bgBlue("k = ", k, "\t var = ", var.tmp))
+            sample.v <- ow.pts.dat[[var.tmp]]
+            dens.tmp <- sample.dist.tmp[[var.tmp]]
+            #
+            class.tmp <- class(dens.tmp)
+            if(class.tmp == "histogram") {
+              surp.v <- calc_surprisal_hist_(dens.tmp, sample.v)
+            } else if (class.tmp == "table") {
+              surp.v <- calc_surprisal_tab_(dens.tmp, sample.v)
+            }
+            #
+            n.dat <- length(surp.v)
+            cat("\n\t\t")
+            cat(crayon::bgWhite("adding to data..."))
+            return.dat <- return.dat |> 
+              add_row(
+                var = rep(var.tmp, n.dat),
+                kernel = rep(fold.tmp, n.dat),
+                bw = rep(bw.tmp, n.dat),
+                surprisal = surp.v
+              )
+        }
+      }
+    } # end outer loop
+    
+  }
+  
+  {
+    var.v <- return.dat$var |> unique(); var.v
+    
+    # infinite values
+    return.dat |> 
+      group_by(var, bw) |> 
+      summarise(count_inf = sum(is.infinite(surprisal))) |> 
+      arrange(desc(count_inf))
+    
+    # max non-infinite value
+    max.non.inf <- return.dat |> 
+      filter(!is.infinite(surprisal)) |> 
+      select(surprisal) |> 
+      min(); max.non.inf
+    replace.inf <- max.non.inf-4
+    
+    plot.dat <- return.dat |> 
+      mutate(surprisal = if_else(is.infinite(surprisal), replace.inf, surprisal))
+    
+    
+    for(i in seq_along(var.v)) {
+      var.tmp <- var.v[i]
+      cat("\nViewing : ")
+      cat(crayon::bgBlue(var.tmp))
+      p1.dat <- plot.dat |> 
+        filter(var == var.tmp) |> 
+        mutate(kernel = as.factor(kernel),
+             bw = as.factor(bw)) |> 
+        group_by(kernel, bw)
+      mean.surprisal <- mean(log(-1*p1.dat$surprisal), na.rm=T); mean.surprisal
+      median.surprisal = median(log(-1*p1.dat$surprisal), na.rm=T); median.surprisal
+      p1 <- p1.dat |> 
+        ggplot(aes(x=bw, y=log(-1*surprisal), fill=kernel)) + 
+        geom_boxplot() +
+        labs(title = paste0("var = ", var.tmp, " mean = ", mean.surprisa), " med = ", median.surprisal) ) +
+        theme(axis.text.x = element_text(size=14, angle=70))
+      plot(p1)
+      cat("\nPress any key for next...")
+      prpt <- readline(prompt=" ")
+    }
+    
+  }
+  
+  
 }
 
-{
-  rm(list=ls())
-  gc()
-  band.v <- c(50, 100, 200, 300, 400, 500, 600)
-  for(i in seq_along(band.v)) {
-    band.tmp <- band.v[i]
-    cat(paste0("\014\nBANDWIDTH = ", band.tmp) )
-    dat.tmp <- readRDS(file=paste0("expl_data/res_", band.v[i], ".Rds") )
-    plot(dat.tmp[[3]] + labs(title=paste0("bandwidth : ", band.tmp)))
-    cat("\n\tenter for next...")
-    usr.in <- readline(prompt="  ")
-  }
-}
-
-
-  
-# if you do any of the Neyman-Scott models with different kernels, can you recover anything like the observed figures?
-# create a quadscheme?

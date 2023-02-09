@@ -1,14 +1,11 @@
 require(spatstat)
-require(terra)
-require(tidyverse)
-require(assertthat)
 require(crayon)
-source("functions/construct_ppp_.R")
 #'
 #'
 #'
 compute_density_ <- function(ppp.in, bw.in, adj.num, verbose=T, DBG=T) {
-  if(verbose) cat("\n\tCALL FUN: compute_density_...")
+  cat("\n\n\t")
+  cat(crayon::bgGreen("SUB-FUNCT: compute_density_...") )
   if(verbose) cat(crayon::bgBlue("\tbw in = ", bw.in) %+% crayon::bgRed("\tadj.num = ", adj.num))
   
   ### density

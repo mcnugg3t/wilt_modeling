@@ -1,11 +1,11 @@
 require(terra)
 require(tidyverse)
 require(crayon)
-#' 0) takes density object as df, ow.rast, n.sim 1) determines number of cells and their locations ~ priors
-#'
+#' this function generates list of n.sim random point patterns for a given density
+#' 0) takes density object as df, ow.rast, n.sim 1) determines number of cells ~ poisson(500) and their locations ~ density
 #'
 create_ppps_ <- function(density.df, ow.df, n.sim, owin.in, N.OW.CELLS=500, verbose=T, DBG=F) {
-  cat(crayon::bgGreen("\n\nFUNCT : create_ppps_"))
+  cat(crayon::bgGreen("\n\tFUNCT : create_ppps_"))
   
   if(verbose) cat( paste0("\n\tdrawing n.cells infected ~ Poisson(", N.OW.CELLS, ")") )
   n.pts = rpois(
@@ -17,7 +17,8 @@ create_ppps_ <- function(density.df, ow.df, n.sim, owin.in, N.OW.CELLS=500, verb
     nrow=n.sim, 
     ncol=max(n.pts))
   
-  if(verbose) cat(paste0("\n\tassigning cell totals to ", n.sim, " vectors with avg. length ", mean(n.pts), "  ~ density (takes time)\n\t\t1 -> 10  :  ") )
+  if(verbose) cat(paste0("\n\tassigning cell totals to ", n.sim, " vectors with avg. length ", 
+                         mean(n.pts), "  ~ density (takes time)\n\t\t1 -> 10  :  ") )
   
   prog.inc <- n.sim %/% 10 
   for(j in 1:n.sim) {
@@ -31,8 +32,8 @@ create_ppps_ <- function(density.df, ow.df, n.sim, owin.in, N.OW.CELLS=500, verb
   }
   
   ow.ct.tab <- ow.df$ow_rast_10 |> table()
-  ow.ct.sum <- ct.tab |> sum()
-  ct.probs <- c(ct.tab[1]/ct.sum, ct.tab[2]/ct.sum, ct.tab[3]/ct.sum)
+  ow.ct.sum <- ow.ct.tab |> sum()
+  ct.probs <- c(ow.ct.tab[1]/ow.ct.sum, ow.ct.tab[2]/ow.ct.sum, ow.ct.tab[3]/ow.ct.sum)
   
   
   ##
