@@ -3,20 +3,17 @@ require(crayon)
 #'
 #'
 join_data_ <- function(grd.int, verbose=T, DBG=T) {
+  # SETUP
   if(verbose) cat("\nJOINING DATA...")
-  
   fold.v <- c("groundwater", "manage", "polaris", "saga", "soils", "wilt", "wiscland2")
-
   sa.base <- rast( paste0("mid_data/", grd.int, "/study_area/sa_base.tif") )
-
   to.return <- sa.base
   
-  # loop over folders
+  # LOOP OVER FOLDERS
   for(i in seq_along(fold.v)) {
     fold.tmp <- fold.v[i]
     if(verbose) cat(paste0("\n\n\tfolder = ", fold.tmp, "\t(i = ", i, ")"))
-    
-    nest.fls.tmp <- list.files(path = paste0("mid_data/", grd.int, "/", fold.v[i]))
+    nest.fls.tmp <- list.files(path = paste0("mid_data/", grd.int, "/", fold.v[i])) # list files
     nest.fls.clean <- nest.fls.tmp[str_detect(nest.fls.tmp, pattern="(.tif$)")] # remove files that don't end in .tif
     if(DBG) {
       cat("\n\t\tnest.fls.tmp = ")
