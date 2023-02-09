@@ -34,7 +34,14 @@ ow.win.10 <- owin(
   )
 # construct spatstat ppp object
 ow.crds <- crds(ow.pts)
-ow.ppp <- ppp(x = ow.crds[,1], y = ow.crds[,2], window = ow.win.10) # 59 points outside of window + some duplicated
+ow.ppp <- ppp(
+  x = ow.crds[,1], 
+  y = ow.crds[,2], 
+  window = ow.win.10) # 59 points outside of window + some duplicated
+dummy.scheme <- ppp(
+  x = sa.df$x, 
+  y = sa.df$y)
+ow.quad <- quadscheme(data=ow.ppp, dummy=dummy.scheme, method="grid")
 }
 #
 
