@@ -9,6 +9,7 @@
   library(tidyverse)
   library(assertthat)
 } |> suppressPackageStartupMessages()
+
 ##
 ##### 0 - construct spatstat ppp objects and save #### 
 { 
@@ -64,7 +65,7 @@
     source("functions/generate_densities_.R")
     generate_densities_(
       ow.ppp = ow.ppp.10,
-      bw.list = bw.res
+      bw.v = c(bw.res[[2]], bw.res[[1]])
       )
   }
 }
@@ -129,9 +130,7 @@
     }
 }
 
-# simulation envelope for L under:
-# 1 - inhomogeneous poisson
-# 2 - cox process
+# simulation envelope for L under varying bw values
 {
   { # setup
     rm(list=ls())
@@ -188,20 +187,15 @@
     gc()
     soils.df <- readRDS("clean_data/soils_df.Rds")
     dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
+    dat.in <- subset(dat.10, subset=c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s"), negate=T)
   }
   
   #
   {
     source("functions/sample_kdes_.R")
-    ##
-    ##
-    ##
-    rm.vars <- c()
-    ##
-    ##
-    ##
+    interact.v <- c("")
     sample_kdes_(
-      covar.rast = dat.10,
+      covar.rast = dat.in,
       join.dat = soils.df,
       n.sim=1e5, 
       verbose=T, 
@@ -213,57 +207,64 @@
 ## Calculate surprisal distributions
 {
   
-  { # setup
+  { # setup for surprisal
     rm(list=ls())
     gc()
     soils.dat.df <- readRDS("clean_data/soils_df.Rds")
-
+    rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
+    
+    cont.var.v <- c("gw_10", "bd", "clay", "ph", "sand", "silt", 
+                    "aspect", "channel_dist_s5", "channel_dist_s7", 
+                    "conv_ind", "elev", "hillshade", "ls", "plan_curv",
+                    "prof_curv", "rsp", "slope", "topo_wet", "total_catch", 
+                    "val_depth", "wl2_oakprob_10")
+    source("functions/create_interact_terms_.R")
+    interact.v <- create_interact_terms_(cont.var.v, verbose=T, DBG=T)
+    
     ow.pts.dat <- terra::rast("clean_data/joindat_10_1200.tif") |> 
       as.data.frame() |>
       filter(ow_rast_10 > 0) |> 
       left_join(soils.dat.df) |> 
       select(-`study area`, -soils_rast, -ow_rast_10) |> 
-      select(-rm.vars)
+      select(-all_of(rm.vars))
+    
+    source("functions/add_interact_.R")
+    interact.dat <- add_interact_(ow.pts.dat, interact.v)
+    
     var.v <- names(ow.pts.dat); var.v
     source("functions/calc_surprisal_hist_.R")
     source("functions/calc_surprisal_tab_.R")
     return.dat <- tibble(
       var = character(),
-      kernel = character(),
       bw = numeric(),
       surprisal = numeric()
     )
-    fold.v <- list.files("clean_data/sample_dist")
+    dens.files <- list.files("clean_data/sample_dist")
   }
   
   
   
-  { ## RUN BIG LOOP
-    for(i in seq_along(fold.v)) { # loop over folders
-        fold.tmp <- fold.v[i]
-        fold.path.tmp <- paste0("clean_data/sample_dist/", fold.tmp, "/")
-        cat(paste0("\n\ni = ", i, "\tfolder = ", fold.tmp))
-        dens.files <- list.files(fold.path.tmp)
-        
-        for(j in seq_along(dens.files)) {
-          fn.tmp <- dens.files[j]
-          bw.tmp <- fn.tmp |> 
+  { ## CALC SURPRISAL
+        for(j in seq_along(dens.files)) { # for each density file
+          fn.tmp <- dens.files[j] # extr filename
+          bw.tmp <- fn.tmp |>  # extr bandwidth
             str_remove("samp_dist_bw_") |>
             str_remove(".Rds") |> 
             as.numeric()
           cat(paste0("\n\n\tj = ", j, "\tfn.tmp = ", fn.tmp, "   bw = ", bw.tmp))
-          fp.tmp <- paste0(fold.path.tmp, fn.tmp)
+          fp.tmp <- paste0("clean_data/sample_dist/", fn.tmp)
           
           # read sampling dist file
           sample.dist.tmp <- readRDS(fp.tmp)
           #
           
-          for(k in seq_along(var.v)) { # inner loop
+          for(k in seq_along(var.v)) { # inner loop along variables
             var.tmp <- var.v[k]
             cat("\n\t\t")
             cat(crayon::bgBlue("k = ", k, "\t var = ", var.tmp))
             sample.v <- ow.pts.dat[[var.tmp]]
             dens.tmp <- sample.dist.tmp[[var.tmp]]
+            
             #
             class.tmp <- class(dens.tmp)
             if(class.tmp == "histogram") {
@@ -278,14 +279,13 @@
             return.dat <- return.dat |> 
               add_row(
                 var = rep(var.tmp, n.dat),
-                kernel = rep(fold.tmp, n.dat),
                 bw = rep(bw.tmp, n.dat),
                 surprisal = surp.v
               )
         }
-      }
-    } # end outer loop
-  }
+      } # end outer loop
+    saveRDS(return.dat, file="clean_data/plot/information_plot_dat.Rds")
+    } # end wrap
   
   {
       var.v <- return.dat$var |> unique(); var.v
@@ -300,13 +300,13 @@
       max.non.inf <- return.dat |> 
         filter(!is.infinite(surprisal)) |> 
         select(surprisal) |> 
-        min(); max.non.inf
+        max(); max.non.inf
       
-      replace.inf <- max.non.inf-4
+      replace.inf <- max.non.inf
       
+      # adjust infinite values to slightly above max
       plot.dat <- return.dat |> 
-        mutate(surprisal = if_else(is.infinite(surprisal), replace.inf, surprisal))
-      
+        mutate(surprisal = if_else(is.infinite(surprisal), replace.inf + runif(n=1, min=2, max=5), surprisal))
       
       for(i in seq_along(var.v)) {
         
@@ -316,23 +316,16 @@
           cat(crayon::bgBlue(var.tmp))
           p1.dat <- plot.dat |> 
             filter(var == var.tmp) |> 
-            mutate(kernel = as.factor(kernel),
-                 bw = as.factor(bw)) |> 
-            group_by(kernel, bw)
+            mutate(
+              plt.x = bw + runif( n=nrow(p1.dat), min=-12.5, max=12.5 ),
+              plt.y = surprisal )
           
           surp.v <- p1.dat$surprisal
-          #mean.surprisal <- mean(-1*surp.v, na.rm=T); mean.surprisal
-          #median.surprisal = median(log(-1*surp.v), na.rm=T); median.surprisal
+          mean.surprisal <- mean(surp.v, na.rm=T); mean.surprisal
+          median.surprisal = median(log(surp.v), na.rm=T); median.surprisal
           
-          plot.dat <- p1.dat |> 
-            ungroup() |> 
-            mutate(
-              bw.num = as.numeric(levels(bw))[bw],
-              plt.x = bw.num + runif( n=nrow(p1.dat), min=-5, max=5 ),
-              plt.y = log(-1*surprisal) )
-          
-          central.dat <- plot.dat |> 
-            group_by(bw.num) |> 
+          central.dat <- p1.dat |> 
+            group_by(bw) |> 
             summarise(mean = mean(plt.y),
                       median = median(plt.y)) |>
             mutate(skew = (mean-median)^2) |> 
@@ -340,23 +333,22 @@
             pivot_longer(cols=2:3, names_to="centrality", values_to = "val")
       }
       
-      # want to plot the mean and median surprisal for each
       
-      
-      {
+      { # plot
         clrs <- c("mean" = "violet", "median" = "deeppink")
-        plot.tmp <- plot.dat |> 
-          ggplot(aes(x=log(plt.x, base=10), y=log(plt.y) )) + 
+        plot.tmp <- p1.dat |> 
+          ggplot(aes(x=plt.x, y= log(plt.y) )) + 
           theme(
             plot.title = element_text(size=24),
             axis.text.x = element_text(size=14, angle=0),
             panel.border = element_blank(),
             panel.grid.major = element_blank(), 
             panel.grid.minor = element_blank(),
-            panel.background = element_rect(fill="black")) + 
+            panel.background = element_rect(fill="black")
+            ) + 
           geom_hex(bins=30) +
-          geom_point(data=central.dat, aes(x=log(bw.num, base=10), y=log(val), size=skew, color=centrality)) + 
-          labs(title = var.tmp, x = "log(bandwidth)", y="log(-surprisal)" ) +
+          geom_point(data=central.dat, aes(x=bw, y=log(val), size=skew, color=centrality)) + 
+          labs(title = paste0(var.tmp, " mean IC = ", round(mean.surprisal, 1) ), x = "bandwidth", y="log(Ix)" ) +
           scale_color_manual(values = clrs) +
           scale_fill_viridis_c(option="D", name="frequency")
         plot(plot.tmp)

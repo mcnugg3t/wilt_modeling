@@ -18,7 +18,7 @@ calc_surprisal_hist_ <- function(hist.in, sample.v.in) {
         min.dist.ind <- sample(x=min.dist.ind, size=1, prob = rep(1/len.tmp, len.tmp))
       }
       prob.ret <- hist.in$density[min.dist.ind] / sum(hist.in$density)
-      return(-1*log(1/prob.ret))
+      return(-1*log(prob.ret))
     }, FUN.VALUE = numeric(1))
   return(surprise.v)
 }

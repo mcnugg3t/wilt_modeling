@@ -14,7 +14,7 @@ calc_surprisal_tab_ <- function(tab.in, sample.v.in) {
     vapply(FUN = function(x) {
       ind.tmp <- which(tab.tbl[[1]] == x)
       prob <- tab.tbl[["prob"]][ind.tmp]
-      return(-log(1/prob))
+      return(-1*log(prob))
     }, FUN.VALUE = numeric(1))
   return(surprisal.v)
 }

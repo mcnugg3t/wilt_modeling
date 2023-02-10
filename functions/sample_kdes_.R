@@ -4,10 +4,11 @@ require(assertthat)
 require(terra)
 require(crayon)
 source("functions/unfold_.R")
+source("functions/add_interact_.R")
 #' takes covariate raster and nsim, loops over all KDEs and computes sampling dist -> saves
 #' 
 #'
-sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, DBG=F) {
+sample_kdes_ <- function(covar.rast, join.dat, n.sim, interact.v, rm.vars, n.breaks=100, verbose=T, DBG=F) {
   # setup
   if(verbose) cat( crayon::bgGreen("\n\nFUNCT : sample_kdes_") )
   pth.tmp <- paste0("clean_data/density/")
@@ -68,7 +69,9 @@ sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, D
       extr.res <- terra::extract(covar.rast, ind.extr)
       if(DBG) cat("\n\t\tmerging...")
       extr.res.full <- cbind(ind.unique, extr.res) |> 
-        select(-ow_rast_10, -index, -x, -y, -`study area`)
+        select(-ow_rast_10, -index, -x, -y, -`study area`) 
+      
+      #if(DBG) cat(paste0("\n\n\n**", paste0(names(extr.res.full), collapse=" , "), "**\n\n\n"))
       
       # join data
       extr.join <- extr.res.full |> 
@@ -80,11 +83,7 @@ sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, D
       
       ##
       ## ADD INTERACTIONS
-      ##
-      # for(z in seq_along(interact.v)) {
-      #   # extract the var names - split on " x "
-      #   # each column to be interacted - get vector, subtract by its minimum
-      #}
+      extr.join <- add_interact_(extr.join, interact.v, T, F)
       
       
       ##

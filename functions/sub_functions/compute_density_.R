@@ -6,7 +6,7 @@ require(crayon)
 compute_density_ <- function(ppp.in, bw.in, verbose=T, DBG=T) {
   cat("\n\n\t")
   cat(crayon::bgGreen("SUB-FUNCT: compute_density_...") )
-  if(verbose) cat(crayon::bgBlue("\tbw in = ", bw.in) %+% crayon::bgRed("\tadj.num = ", adj.num))
+  if(verbose) cat(crayon::bgBlue("\tbw in = ", bw.in) )
   
   ### density
   if(verbose) cat("\n\tcalc density...")
