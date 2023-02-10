@@ -5,7 +5,7 @@ require(crayon)
 join_data_ <- function(grd.int, verbose=T, DBG=T) {
   # SETUP
   if(verbose) cat("\nJOINING DATA...")
-  fold.v <- c("groundwater", "manage", "polaris", "saga", "soils", "wilt", "wiscland2")
+  fold.v <- c("groundwater", "bedrock", "manage", "polaris", "saga", "soils", "wilt", "wiscland2")
   sa.base <- rast( paste0("mid_data/", grd.int, "/study_area/sa_base.tif") )
   to.return <- sa.base
   

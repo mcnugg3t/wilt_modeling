@@ -1,26 +1,30 @@
 
 ######## INIT ##########
+
 {
   rm(list=ls())
   gc()
-}
-
-{ # load packages
-library(tidyverse)
-library(assertthat)
-library(sf)
-library(terra)
+  library(tidyverse)
+  library(assertthat)
+  library(sf)
+  library(terra)
 } |> suppressPackageStartupMessages()
 #
 ######## WiscLand2 Data & Grid Templates ##########
-rm(list=ls())
-gc()
+
+{
+  source("functions/create_dirs_.R")
+  create_dirs_()
+}
+
 ## WiscLand2 level 3 classification
 #
 # crop WL2 data to the study area extent - slightly different for 10 m and 30 m grids
 # Crop Wiscland2 data to study area bbox, save
 {
   { 
+    rm(list=ls())
+    gc()
     wl2.class <- terra::rast("raw_data/wiscland2_lvl_3/wiscland2_level3.tif")
     crs(wl2.class)
     sa.bbox <- terra::vect("raw_data/full_area/elev_pull_bbox.shp") |>  # Read bbox shapefile defining full study area 
@@ -49,13 +53,15 @@ gc()
     values(grd.template.10) <- 0
     terra::writeRaster(grd.template.10, filename="mid_data/10/grid/grd_template_10.tif", overwrite=T)
   }
-  # resample wl2 and class prob onto 30 m grid
+  # resample wl2 and class prob onto 10 m grid
   {
+    # classification
     wl2.class.10 <- wl2.class |> 
       project(crs(grd.template.10)) |> 
       resample(grd.template.10, method="near")
     assert_that(crs(wl2.class.10) == crs(grd.template.10))
     writeRaster(wl2.class.10, filename="mid_data/10/wiscland2/wl2_cls_10.tif")
+    # classprob
     wl2.classprob.10 <- wl2.cls.prob |> 
       project(crs(grd.template.10)) |> 
       resample(grd.template.10, method="near")
@@ -64,75 +70,109 @@ gc()
   }
 }
 #
-######## Oak Wilt Points ##########
-# clean, merge, and save
+######## Bedrock Depth ##########
 {
   rm(list=ls())
   gc()
-  
-  { 
-  ow.pts.2021 <- sf::st_read("raw_data/wilt_points/2021/2021_oakwilt_review_sites.shp") |> 
-      select(2:6, 49) |> 
-      filter(Active == "yes") |> 
-      add_column(year = 2021) |> 
-      select(-Active)
-  ow.pts.2004.2020 <- sf::st_read("raw_data/wilt_points/2004-2021/All_Oak_Wilt_waypoints_2004-present.shp") 
-  pts.clean <- ow.pts.2004.2020 |> 
-    select(2:6, 32, 35) |> 
-    mutate(dtime = lubridate::as_datetime(ltime),
-           year = lubridate::isoyear(dtime)) |> 
-    select(1:5, 10)
-  assert_that( st_crs(ow.pts.2021) == st_crs(pts.clean) )
-  pts.comb <- rbind(ow.pts.2021, pts.clean) |> 
-    st_zm(drop=T, what="ZM")
-  st_write(pts.comb, dsn="mid_data/wilt/ow_pts_comb.shp", overwrite=T)
+  # 30 m grid
+  {
+    grd.template.30 <- terra::rast("mid_data/30/grid/grd_template.tif")
+    bedrock.vect <- terra::vect("raw_data/bedrock_depth/GCSM_-_Bedrock_Depth.shp") |> 
+      project(crs(grd.template.30))
+    bedrock.crop <- bedrock.vect |> crop(ext(grd.template.30))
+    bedrock.rast <- terra::rasterize(bedrock.crop, grd.template.30, field="DEPTH")
+    assert_that(crs(bedrock.rast) == crs(grd.template.30))
+    #bedrock.rast |> plot()
+    writeRaster(bedrock.rast, filename="mid_data/30/bedrock/bedrock_30.tif", overwrite=T)
+  }
+  # 10 m grid
+  {
+    grd.template.10 <- terra::rast("mid_data/10/grid/grd_template_10.tif")
+    bedrock.vect <- terra::vect("raw_data/bedrock_depth/GCSM_-_Bedrock_Depth.shp") |> 
+      project(crs(grd.template.10))
+    bedrock.crop <- bedrock.vect |> crop(ext(grd.template.10))
+    bedrock.rast <- terra::rasterize(bedrock.crop, grd.template.10, field="DEPTH")
+    assert_that(crs(bedrock.rast) == crs(grd.template.10))
+    #bedrock.rast |> plot()
+    writeRaster(bedrock.rast, filename="mid_data/10/bedrock/bedrock_10.tif", overwrite=T)
+  }
+}
+
+#
+######## Oak Wilt Points ##########
+
+{
+  { # ow points
+    rm(list=ls())
+    gc()
+    ow.pts.2021 <- sf::st_read("raw_data/wilt_points/2021/2021_oakwilt_review_sites.shp") |> 
+        select(2:6, 49) |> 
+        filter(Active == "yes") |> 
+        add_column(year = 2021) |> 
+        select(-Active)
+    ow.pts.2004.2020 <- sf::st_read("raw_data/wilt_points/2004-2021/All_Oak_Wilt_waypoints_2004-present.shp") 
+    pts.clean <- ow.pts.2004.2020 |> 
+      select(2:6, 32, 35) |> 
+      mutate(dtime = lubridate::as_datetime(ltime),
+             year = lubridate::isoyear(dtime)) |> 
+      select(1:5, 10)
+    assert_that( st_crs(ow.pts.2021) == st_crs(pts.clean) )
+    pts.comb <- rbind(ow.pts.2021, pts.clean) |> 
+      st_zm(drop=T, what="ZM")
+    st_write(pts.comb, dsn="mid_data/wilt/ow_pts_comb.shp", overwrite=T)
   }
   
-  rm(list=ls())
-  gc()
+  
   
   { # rasterize counts onto grid templates
-  grd.temp.10 <- terra::rast("mid_data/10/grid/grd_template_10.tif")
-  ow.pts.comb <- terra::vect("mid_data/wilt/ow_pts_comb.shp") |> 
-    project(crs(grd.temp.10))
-  ow.rast.10 <- terra::rasterizeGeom(ow.pts.comb, grd.temp.10, fun="max")
-  #plot(ow.rast.10)
-  #max(values(ow.rast.10), na.rm=T)
-  terra::writeRaster(ow.rast.10, filename="mid_data/10/wilt/ow_rast_10.tif", overwrite=T)
-    
-  grd.temp.30 <- terra::rast("mid_data/30/grid/grd_template.tif")
-  ow.pts.comb <- terra::vect("mid_data/wilt/ow_pts_comb.shp") |> 
-    project(crs(grd.temp.30))
-  ow.rast.30 <- terra::rasterizeGeom(ow.pts.comb, grd.temp.30, fun="max")
-  max(values(ow.rast.30), na.rm=T)
-  terra::writeRaster(ow.rast.30, filename="mid_data/30/wilt/ow_rast_30.tif", overwrite=T)  
+    rm(list=ls())
+    gc()
+    grd.temp.10 <- terra::rast("mid_data/10/grid/grd_template_10.tif")
+    ow.pts.comb <- terra::vect("mid_data/wilt/ow_pts_comb.shp") |> 
+      project(crs(grd.temp.10))
+    ow.rast.10 <- terra::rasterizeGeom(ow.pts.comb, grd.temp.10, fun="max")
+    #plot(ow.rast.10)
+    #max(values(ow.rast.10), na.rm=T)
+    terra::writeRaster(ow.rast.10, filename="mid_data/10/wilt/ow_rast_10.tif", overwrite=T)
+      
+    grd.temp.30 <- terra::rast("mid_data/30/grid/grd_template.tif")
+    ow.pts.comb <- terra::vect("mid_data/wilt/ow_pts_comb.shp") |> 
+      project(crs(grd.temp.30))
+    ow.rast.30 <- terra::rasterizeGeom(ow.pts.comb, grd.temp.30, fun="max")
+    max(values(ow.rast.30), na.rm=T)
+    terra::writeRaster(ow.rast.30, filename="mid_data/30/wilt/ow_rast_30.tif", overwrite=T)  
   }
   
 }
 #
 ######## POLARIS DATA ##########
 
-rm(list=ls())
-gc()
-source("functions/download_polaris_.R")
-download_polaris_()
+{ # download POLARIS data
+  rm(list=ls())
+  gc()
+  source("functions/download_polaris_.R")
+  download_polaris_()
+}
 
-source("functions/polaris_weighted_avg_.R")
-property.v <- c("alpha", "bd", "clay", "hb", "ksat", "lambda", "n", "om", "ph", "sand", "silt", "theta_r", "theta_s")
-
-for(grd in c(10, 30)) {
-  if(grd == 10) {
-    grd.tmp <- rast("mid_data/10/grid/grd_template_10.tif")
-  } else {
-    grd.tmp <- rast("mid_data/30/grid/grd_template.tif")
-  }
-  for(p in seq_along(property.v)) {
-    p.tmp <- property.v[p]
-    cat(paste0("\np = ", p, "\tprop = ", p.tmp))
-    rast.tmp <- polaris_weighted_avg_(str.var = p.tmp, grd.temp = grd.tmp, verbose=T, DBG=T)
-    terra::writeRaster(rast.tmp, paste0("mid_data/", toString(grd),"/polaris/", p.tmp, ".tif"), overwrite=T)
+{
+  source("functions/polaris_weighted_avg_.R")
+  property.v <- c("alpha", "bd", "clay", "hb", "ksat", "lambda", "n", "om", "ph", "sand", "silt", "theta_r", "theta_s")
+  
+  for(grd in c(10, 30)) {
+    if(grd == 10) {
+      grd.tmp <- rast("mid_data/10/grid/grd_template_10.tif")
+    } else {
+      grd.tmp <- rast("mid_data/30/grid/grd_template.tif")
+    }
+    for(p in seq_along(property.v)) {
+      p.tmp <- property.v[p]
+      cat(paste0("\np = ", p, "\tprop = ", p.tmp))
+      rast.tmp <- polaris_weighted_avg_(str.var = p.tmp, grd.temp = grd.tmp, verbose=T, DBG=T)
+      terra::writeRaster(rast.tmp, paste0("mid_data/", toString(grd),"/polaris/", p.tmp, ".tif"), overwrite=T)
+    }
   }
 }
+
   
 #
 ######## CNNF Manage Areas ##########

@@ -1,6 +1,6 @@
 
 ##
-## INIT
+##### INIT #### 
 {
   rm(list=ls())
   gc()
@@ -9,9 +9,8 @@
   library(tidyverse)
   library(assertthat)
 } |> suppressPackageStartupMessages()
-
 ##
-## 0 - construct spatstat ppp objects and save
+##### 0 - construct spatstat ppp objects and save #### 
 { 
   dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
   dat.30 <- terra::rast("clean_data/joindat_30_1200.tif")
@@ -26,7 +25,7 @@
   saveRDS(ow.ppp.30, file="clean_data/ow_ppp_30.Rds")
 }
 ##
-## 1 - Besag's L-function : estimate + gradient
+##### 1 - Besag's L-function : estimate + gradient #### 
 {
   ow.ppp <- readRDS("clean_data/ow_ppp.Rds")
   L.res <- Lest(ow.ppp, correction="translation")
@@ -41,9 +40,8 @@
     pivot_longer(cols=2:3, names_to = "type", values_to="val") |> 
     ggplot(aes(x=r, y=val, color=type)) + geom_smooth(span=0.10)
 }
-
 ##
-## 2 - generate densities across parameter grid
+##### 2 - generate densities across parameter grid #### 
 {
   #
   # estimate bandwidth using 30-m x 30-m quadrature scheme
@@ -63,12 +61,10 @@
     gc()
     ow.ppp.10 <- readRDS("clean_data/ow_ppp_10.Rds")
     bw.res <- readRDS("clean_data/bw_res_30.Rds")
-    adjust.v <- c(0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4)
     source("functions/generate_densities_.R")
     generate_densities_(
       ow.ppp = ow.ppp.10,
-      bw.list = bw.res,
-      adj.v = adjust.v
+      bw.list = bw.res
       )
   }
 }
@@ -89,32 +85,23 @@
     gc()
     ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds") # load ppp
     wilt.owin <- ow.ppp$window
-    fold.v <- list.files("clean_data/density/")
+    file.v <- list.files("clean_data/density/")
   }
   
   #
   # big loop
   {
   source("functions/create_ppps_.R")
-    for(i in seq_along(fold.v)) { # over the two folders
-      # prep
-      fold.tmp <- fold.v[i]
-      cat(paste0("\n\n\nfolder = ", fold.tmp))
-      fold.path <- paste0("clean_data/density/", fold.tmp, "/")
-      fls.tmp <- list.files(fold.path)
-      cat(paste0("\t\t\tfiles = ", paste0(fls.tmp, collapse="  ,  ")))
-      
-      for(j in seq_along(fls.tmp)) { # over each density file
+      for(j in seq_along(file.v)) { # over each density file
         # prep
-        fl.tmp <- fls.tmp[j]
+        fl.tmp <- file.v[j]
         cat(paste0("\n\n\nj = ", j, "\n\tfl.tmp = ", fl.tmp))
-        path.tmp <- paste0(fold.path, fl.tmp)
+        path.tmp <- paste0("clean_data/density/", fl.tmp)
         bw.num <- fl.tmp |> 
           str_remove("dens_bw_") |> 
           str_remove(".Rds") |> 
-          as.numeric() |> 
-          round(2)
-        save.tmp <- paste0("clean_data/sample/", fold.tmp, "/ppp_list_bw_", bw.num, ".Rds" )
+          as.numeric()
+        save.tmp <- paste0("clean_data/sample/ppp_list_bw_", bw.num, ".Rds" )
         cat(paste0("\n\tsave.tmp = ", save.tmp))
         
         # read density
@@ -128,7 +115,7 @@
           mutate(value = if_else( ((0-value)^2) < cutoff.tmp, 0, value), # if distance between 0 and value is < 60th_percentile, set to 0
                  value = value/sum(value, na.rm=T))
         n.dens = density.df |> filter(value > 0) |> nrow()
-        cat(paste0("\n\tcutoff = ", cutoff.tmp, "\n\tdensity val proportion remaining = ", round(n.dens/nrow(density.df), 3), " (", n.dens, ")"))
+        cat(paste0("\n\tcutoff = ", cutoff.tmp, " (", n.dens, ")"))
         cat(crayon::bgMagenta("\tcreating ppp list..."))
         ppp.list <- create_ppps_(
           density.df,
@@ -140,7 +127,6 @@
         saveRDS(ppp.list, file=save.tmp)
       }
     }
-  }
 }
 
 # simulation envelope for L under:
@@ -151,53 +137,43 @@
     rm(list=ls())
     gc()
     ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
-    fold.v <- list.files("clean_data/sample/")
+    files.tmp <- list.files("clean_data/sample/")
   }
-  
   # loop over point patterns
-  for(i in seq_along(fold.v)) {
-    fold.tmp <- fold.v[i]
-    cat(crayon::bgBlue("\n\n\nfolder = ", fold.tmp))
-    cat("\n\tfiles : ")
-    fold.path <- paste0("clean_data/sample/", fold.tmp, "/")
-    files.tmp <- list.files(fold.path)
-    cat(paste0(files.tmp, collapse=" , "))
-    for(j in seq_along(files.tmp)) {
-      # setup
-      fn.tmp <- files.tmp[j]
-      fp.tmp <- paste0(fold.path, fn.tmp)
-      cat(paste0("\n\n\tj = ", j, "\tfl.tmp = ", fn.tmp))
-      bw.tmp <- fn.tmp |> 
+  for(j in seq_along(files.tmp)) {
+    # setup
+    fn.tmp <- files.tmp[j]
+    fp.tmp <- paste0("clean_data/sample/", fn.tmp)
+    cat(paste0("\n\n\tj = ", j, "\tfl.tmp = ", fn.tmp))
+    bw.tmp <- fn.tmp |> 
         str_remove("ppp_list_bw_") |> 
         str_remove(".Rds")
-      save.tmp <- paste0("clean_data/envelope/", fold.tmp, "/envelope_", bw.tmp, ".Rds")
-      save.img <- paste0("clean_data/envelope/", fold.tmp, "/img_", bw.tmp, ".jpg")
-      cat(paste0("\n\t\tsave.tmp = ", save.tmp, "\n\t\tsave.img = ", save.img, "\n\t"))
-      #
-      cat(crayon::bgCyan("loading ppp list..."))
-      ppp.list.tmp <- readRDS(fp.tmp)
-      cat("\n\t")
-      cat(crayon::bgYellow("calc envelope...\n"))
-      envelope.tmp <- envelope(
+    save.tmp <- paste0("clean_data/envelope_", bw.tmp, ".Rds")
+    save.img <- paste0("clean_data/envelope/img_", bw.tmp, ".jpg")
+    cat(paste0("\n\t\tsave.tmp = ", save.tmp, "\n\t\tsave.img = ", save.img, "\n\t"))
+    #
+    cat(crayon::bgCyan("loading ppp list..."))
+    ppp.list.tmp <- readRDS(fp.tmp)
+    cat("\n\t")
+    cat(crayon::bgYellow("calc envelope...\n"))
+    envelope.tmp <- envelope(
         ow.ppp, 
         fun=Lest, 
         funargs=list(rmax=700,correction="border"),
         simulate= ppp.list.tmp # list of point patterns
-      )
-      cat("\n\t")
-      cat(crayon::bgWhite("saving plot..."))
-      jpeg(file=save.img)
-      envelope.tmp |> plot(main=paste0("process: ", fold.tmp, "  bandwidth: ", bw.tmp))
-      dev.off()
-      cat("\n\t")
-      cat(crayon::bgWhite("saving envelope..."))
-      saveRDS(envelope.tmp, file=save.tmp)
-      
+    )
+    cat("\n\t")
+    cat(crayon::bgWhite("saving plot..."))
+    jpeg(file=save.img)
+    envelope.tmp |> plot(main=paste0("bandwidth: ", bw.tmp))
+    dev.off()
+    cat("\n\t")
+    cat(crayon::bgWhite("saving envelope..."))
+    saveRDS(envelope.tmp, file=save.tmp)
     }
-  }
 }
 
-# Fry plot locally + globally
+# Fry plot locally + globally (?)
 {
   
 }
@@ -210,28 +186,27 @@
   {
     rm(list=ls())
     gc()
-    soils.df <- terra::vect("raw_data/cnnf_soil/CNNF_Soil_Layer_2.shp") |> 
-      as.data.frame() |> 
-      select(OBJECTID, SOIL_NAME, SLOPE_CLAS, EROSION_DI) |> 
-      rename(soils_rast = OBJECTID)
-    saveRDS(soils.df, file="mid_data/misc/soils_df.Rds")
+    soils.df <- readRDS("clean_data/soils_df.Rds")
     dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
   }
   
   #
   {
     source("functions/sample_kdes_.R")
+    ##
+    ##
+    ##
+    rm.vars <- c()
+    ##
+    ##
+    ##
     sample_kdes_(
       covar.rast = dat.10,
       join.dat = soils.df,
-      n.sim=1e4, 
+      n.sim=1e5, 
       verbose=T, 
       DBG=T)
   }
-}
-
-{ # test results
-  sample.tst <- readRDS("clean_data/sample_dist/bw.diggle/samp_dist_bw_103.01.Rds")
 }
 
 ##
@@ -241,12 +216,14 @@
   { # setup
     rm(list=ls())
     gc()
-    soils.dat.df <- readRDS("mid_data/misc/soils_df.Rds")
+    soils.dat.df <- readRDS("clean_data/soils_df.Rds")
+
     ow.pts.dat <- terra::rast("clean_data/joindat_10_1200.tif") |> 
       as.data.frame() |>
       filter(ow_rast_10 > 0) |> 
       left_join(soils.dat.df) |> 
-      select(-`study area`, -soils_rast, -ow_rast_10)
+      select(-`study area`, -soils_rast, -ow_rast_10) |> 
+      select(-rm.vars)
     var.v <- names(ow.pts.dat); var.v
     source("functions/calc_surprisal_hist_.R")
     source("functions/calc_surprisal_tab_.R")
@@ -259,9 +236,9 @@
     fold.v <- list.files("clean_data/sample_dist")
   }
   
-  ##
-  ## BIG LOOP
-  { 
+  
+  
+  { ## RUN BIG LOOP
     for(i in seq_along(fold.v)) { # loop over folders
         fold.tmp <- fold.v[i]
         fold.path.tmp <- paste0("clean_data/sample_dist/", fold.tmp, "/")
@@ -308,46 +285,84 @@
         }
       }
     } # end outer loop
-    
   }
   
   {
-    var.v <- return.dat$var |> unique(); var.v
-    
-    # infinite values
-    return.dat |> 
-      group_by(var, bw) |> 
-      summarise(count_inf = sum(is.infinite(surprisal))) |> 
-      arrange(desc(count_inf))
-    
-    # max non-infinite value
-    max.non.inf <- return.dat |> 
-      filter(!is.infinite(surprisal)) |> 
-      select(surprisal) |> 
-      min(); max.non.inf
-    replace.inf <- max.non.inf-4
-    
-    plot.dat <- return.dat |> 
-      mutate(surprisal = if_else(is.infinite(surprisal), replace.inf, surprisal))
-    
-    
-    for(i in seq_along(var.v)) {
-      var.tmp <- var.v[i]
-      cat("\nViewing : ")
-      cat(crayon::bgBlue(var.tmp))
-      p1.dat <- plot.dat |> 
-        filter(var == var.tmp) |> 
-        mutate(kernel = as.factor(kernel),
-             bw = as.factor(bw)) |> 
-        group_by(kernel, bw)
-      mean.surprisal <- mean(log(-1*p1.dat$surprisal), na.rm=T); mean.surprisal
-      median.surprisal = median(log(-1*p1.dat$surprisal), na.rm=T); median.surprisal
-      p1 <- p1.dat |> 
-        ggplot(aes(x=bw, y=log(-1*surprisal), fill=kernel)) + 
-        geom_boxplot() +
-        labs(title = paste0("var = ", var.tmp, " mean = ", mean.surprisa), " med = ", median.surprisal) ) +
-        theme(axis.text.x = element_text(size=14, angle=70))
-      plot(p1)
+      var.v <- return.dat$var |> unique(); var.v
+      
+      # infinite values
+      return.dat |> 
+        group_by(var, bw) |> 
+        summarise(count_inf = sum(is.infinite(surprisal))) |> 
+        arrange(desc(count_inf))
+      
+      # max non-infinite value
+      max.non.inf <- return.dat |> 
+        filter(!is.infinite(surprisal)) |> 
+        select(surprisal) |> 
+        min(); max.non.inf
+      
+      replace.inf <- max.non.inf-4
+      
+      plot.dat <- return.dat |> 
+        mutate(surprisal = if_else(is.infinite(surprisal), replace.inf, surprisal))
+      
+      
+      for(i in seq_along(var.v)) {
+        
+        { # prep for plot
+          var.tmp <- var.v[i]
+          cat("\nViewing : ")
+          cat(crayon::bgBlue(var.tmp))
+          p1.dat <- plot.dat |> 
+            filter(var == var.tmp) |> 
+            mutate(kernel = as.factor(kernel),
+                 bw = as.factor(bw)) |> 
+            group_by(kernel, bw)
+          
+          surp.v <- p1.dat$surprisal
+          #mean.surprisal <- mean(-1*surp.v, na.rm=T); mean.surprisal
+          #median.surprisal = median(log(-1*surp.v), na.rm=T); median.surprisal
+          
+          plot.dat <- p1.dat |> 
+            ungroup() |> 
+            mutate(
+              bw.num = as.numeric(levels(bw))[bw],
+              plt.x = bw.num + runif( n=nrow(p1.dat), min=-5, max=5 ),
+              plt.y = log(-1*surprisal) )
+          
+          central.dat <- plot.dat |> 
+            group_by(bw.num) |> 
+            summarise(mean = mean(plt.y),
+                      median = median(plt.y)) |>
+            mutate(skew = (mean-median)^2) |> 
+            ungroup() |> 
+            pivot_longer(cols=2:3, names_to="centrality", values_to = "val")
+      }
+      
+      # want to plot the mean and median surprisal for each
+      
+      
+      {
+        clrs <- c("mean" = "violet", "median" = "deeppink")
+        plot.tmp <- plot.dat |> 
+          ggplot(aes(x=log(plt.x, base=10), y=log(plt.y) )) + 
+          theme(
+            plot.title = element_text(size=24),
+            axis.text.x = element_text(size=14, angle=0),
+            panel.border = element_blank(),
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(),
+            panel.background = element_rect(fill="black")) + 
+          geom_hex(bins=30) +
+          geom_point(data=central.dat, aes(x=log(bw.num, base=10), y=log(val), size=skew, color=centrality)) + 
+          labs(title = var.tmp, x = "log(bandwidth)", y="log(-surprisal)" ) +
+          scale_color_manual(values = clrs) +
+          scale_fill_viridis_c(option="D", name="frequency")
+        plot(plot.tmp)
+      }
+      
+      
       cat("\nPress any key for next...")
       prpt <- readline(prompt=" ")
     }

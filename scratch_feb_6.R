@@ -1,4 +1,6 @@
-############ FEB 9 ##########
+
+
+############ FEB 9/10 ##########
 
 {
   rm(list=ls())
@@ -12,6 +14,12 @@
   library(terra)
   library(crayon)
 } |> suppressPackageStartupMessages()
+
+bw.res <- readRDS("clean_data/bw_res_30.Rds")
+
+###
+###
+###
 
 list.files("clean_data/sample/bw.diggle/")
 

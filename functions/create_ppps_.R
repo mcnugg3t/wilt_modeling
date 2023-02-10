@@ -96,38 +96,3 @@ create_ppps_ <- function(density.df, ow.df, n.sim, owin.in, N.OW.CELLS=500, verb
   return(ppp.list.return)
 }
   
-  
-  ## for each infection cell, draw infection count according to empirical dist in data
-  
-  #
-  # pre.check <- ind.tbl |>
-  #   group_by(index) |>
-  #   summarise(count = sum(count)) |>
-  #   arrange(desc(count), desc(index)) |>
-  #   head()
-  # pre.check
-  #
-  # ind.ext <- ind.tbl
-  # # do twice
-  # while(sum(ind.ext$count > 1) > 0) {
-  #   subs.rows <- ind.ext[ind.ext$count > 1,]
-  #   ind.ext <- rbind(ind.ext, subs.rows)
-  #   new.counts <- ind.ext$count[ind.ext$count > 1] - 1
-  #   ind.ext$count[ind.ext$count > 1] <- new.counts
-  # }
-  #
-  # post.check <- ind.ext |>
-  #   group_by(index) |>
-  #   summarise(count = n()) |>
-  #   arrange(desc(count), desc(index)) |>
-  #   head()
-  #
-  # pre.check;post.check
-  #
-  # assert_that( # pre.check head slice exactly equal post.check head slice
-  #   ((pre.check == post.check) |> sum())== 12
-  # )
-
-  # locations assigned by perturbing cell center by x + runif(-10, 10), y + runif(-10, 10)
-
-  # convert to point patter

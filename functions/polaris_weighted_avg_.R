@@ -6,8 +6,8 @@ require(tidyverse)
 polaris_weighted_avg_ <- function(str.var, grd.temp, verbose=T, DBG=F) {
   if(verbose) cat(paste0("\n\nWEIGHTED AVERAGE...\t", str.var))
   #
-  depths.v <- c(5, 10, 15, 30, 40)
-  dn.v <- c("_0_5", "_5_15", "_15_30", "_30_60", "_60_100")
+  depths.v <- c(5, 10, 15, 30, 40, 100)
+  dn.v <- c("_0_5", "_5_15", "_15_30", "_30_60", "_60_100", "_100_200")
   #
   for(i in seq_along(depths.v)) {
     if(verbose) cat(paste0("\n\ti = ", i))
@@ -23,7 +23,7 @@ polaris_weighted_avg_ <- function(str.var, grd.temp, verbose=T, DBG=F) {
     }
   }
   if(verbose) cat(paste0("\n\n count NA = ", sum(is.na(values(return.rast)))) )
-  return.rast <- return.rast/100
+  return.rast <- return.rast/200
   if(DBG) cat("\n\nwarping to grd.temp...")
   return.rast <- return.rast |> 
     project(crs(grd.temp)) |> 

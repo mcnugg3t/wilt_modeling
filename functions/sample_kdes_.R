@@ -10,24 +10,12 @@ source("functions/unfold_.R")
 sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, DBG=F) {
   # setup
   if(verbose) cat( crayon::bgGreen("\n\nFUNCT : sample_kdes_") )
-  folds.tmp <- list.files("clean_data/density/") # identify density files
+  pth.tmp <- paste0("clean_data/density/")
+  kdes.tmp <- list.files( pth.tmp ) # identify kde files
   
   ##
-  has.saved.hist <- F
-  has.saved.tab <- F
-  ##
-  
-  # small loop - over 2 folders
-  for(i in seq_along(folds.tmp)) {
-    fld <- folds.tmp[i]
-    if(verbose) cat(paste0("\n\n\nfolder : ", fld)) # debug print
-    pth.tmp <- paste0("clean_data/density/", fld, "/")
-    kdes.tmp <- list.files( pth.tmp ) # identify kde files
-    if(DBG) cat(paste0("\n\tfound : ", paste0(kdes.tmp, collapse="  ,  "))) # debug print
-    
-    ##
-    ## BIG LOOP over KDEs
-    for(j in seq_along(kdes.tmp)) {
+  ## BIG LOOP over KDEs
+  for(j in seq_along(kdes.tmp)) {
       cat(paste0("\n\n\tj = ", j))
       # construct paths
       fn.tmp <- kdes.tmp[j]
@@ -35,12 +23,10 @@ sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, D
       bw.tmp <- fn.tmp |> 
         str_remove("dens_bw_") |> 
         str_remove(".Rds") |> 
-        as.numeric() |> 
-        round(2)
-      
-      save.pth <- paste0("clean_data/sample_dist/", fld, "/samp_dist_bw_", bw.tmp, ".Rds" )
-      
+        as.numeric()
+      save.pth <- paste0("clean_data/sample_dist/samp_dist_bw_", bw.tmp, ".Rds" )
       if(verbose) cat(paste0("\n\t\treading : ", fl.pth, "\n\t\tsave path : ", save.pth)) # debug print
+      
       # read file -> df
       kde.df <- readRDS( fl.pth ) |> 
         as.data.frame()
@@ -62,6 +48,7 @@ sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, D
         size=n.sim, 
         replace=T, 
         prob=kde.df$val_scale)
+      
       if(DBG) cat("\n\t\tgetting unique...")
       ind.unique <- ind.sample |> 
         as_tibble() |>
@@ -108,7 +95,7 @@ sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, D
       
       for(k in seq_along(vars.v)) {
         var.tmp <- vars.v[k]
-        cat(paste0("\n\t\t\t\tvar = ", var.tmp))
+        cat(paste0("\n\t\t\t\tvar = ")); cat(crayon::underline(crayon::bold(var.tmp)))
         if(var.tmp == "count") next
         # subset just count and the variable of interest
         dat.subs <- extr.join |> 
@@ -145,6 +132,4 @@ sample_kdes_ <- function(covar.rast, join.dat, n.sim, n.breaks=100, verbose=T, D
       rm(sample.dist.list)
       gc()
     } ## end BIG LOOP
-    
-  } ## end small loop
 }

@@ -3,7 +3,7 @@ require(crayon)
 #'
 #'
 #'
-compute_density_ <- function(ppp.in, bw.in, adj.num, verbose=T, DBG=T) {
+compute_density_ <- function(ppp.in, bw.in, verbose=T, DBG=T) {
   cat("\n\n\t")
   cat(crayon::bgGreen("SUB-FUNCT: compute_density_...") )
   if(verbose) cat(crayon::bgBlue("\tbw in = ", bw.in) %+% crayon::bgRed("\tadj.num = ", adj.num))
@@ -11,7 +11,7 @@ compute_density_ <- function(ppp.in, bw.in, adj.num, verbose=T, DBG=T) {
   ### density
   if(verbose) cat("\n\tcalc density...")
   t1 <- Sys.time()
-  dens.res <- density(ppp.in, sigma=bw.in, adjust=adj.num, positive=T)
+  dens.res <- density(ppp.in, sigma=bw.in, positive=T)
   if(verbose) cat(paste0("\ttime : ", difftime(Sys.time(), t1, units="secs")))
   
   return(dens.res)
