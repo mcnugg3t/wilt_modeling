@@ -3,6 +3,7 @@ raw_data/*
 mid_data/*
 clean_data/*
 expl_data/*
+tmp/*
 *.mxd
 docs/*
 

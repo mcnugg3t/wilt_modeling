@@ -192,12 +192,24 @@
   
   #
   {
+    rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
+    saveRDS(rm.vars, file="clean_data/rm_vars.Rds")
+    cont.var.v <- c("gw_10", "bd", "clay", "ph", "sand", "silt", 
+                    "aspect", "channel_dist_s5", "channel_dist_s7", 
+                    "conv_ind", "elev", "hillshade", "ls", "plan_curv",
+                    "prof_curv", "rsp", "slope", "topo_wet", "total_catch", 
+                    "val_depth", "wl2_oakprob_10")
+    source("functions/create_interact_terms_.R")
+    interact.v <- create_interact_terms_(cont.var.v, verbose=T, DBG=F)
+    saveRDS(interact.v, file="clean_data/interact_v.Rds")
+    
     source("functions/sample_kdes_.R")
-    interact.v <- c("")
     sample_kdes_(
       covar.rast = dat.in,
       join.dat = soils.df,
       n.sim=1e5, 
+      interact.v = interact.v,
+      rm.vars = rm.vars,
       verbose=T, 
       DBG=T)
   }
@@ -210,16 +222,10 @@
   { # setup for surprisal
     rm(list=ls())
     gc()
-    soils.dat.df <- readRDS("clean_data/soils_df.Rds")
-    rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
     
-    cont.var.v <- c("gw_10", "bd", "clay", "ph", "sand", "silt", 
-                    "aspect", "channel_dist_s5", "channel_dist_s7", 
-                    "conv_ind", "elev", "hillshade", "ls", "plan_curv",
-                    "prof_curv", "rsp", "slope", "topo_wet", "total_catch", 
-                    "val_depth", "wl2_oakprob_10")
-    source("functions/create_interact_terms_.R")
-    interact.v <- create_interact_terms_(cont.var.v, verbose=T, DBG=T)
+    soils.dat.df <- readRDS("clean_data/soils_df.Rds")
+    rm.vars <- readRDS("clean_data/rm_vars.Rds")
+    interact.v <- readRDS("clean_data/interact_v.Rds")
     
     ow.pts.dat <- terra::rast("clean_data/joindat_10_1200.tif") |> 
       as.data.frame() |>
@@ -230,137 +236,31 @@
     
     source("functions/add_interact_.R")
     interact.dat <- add_interact_(ow.pts.dat, interact.v)
+    var.v <- names(interact.dat); var.v
     
-    var.v <- names(ow.pts.dat); var.v
-    source("functions/calc_surprisal_hist_.R")
-    source("functions/calc_surprisal_tab_.R")
     return.dat <- tibble(
       var = character(),
       bw = numeric(),
       surprisal = numeric()
     )
-    dens.files <- list.files("clean_data/sample_dist")
+    
+    
   }
   
   
   
   { ## CALC SURPRISAL
-        for(j in seq_along(dens.files)) { # for each density file
-          fn.tmp <- dens.files[j] # extr filename
-          bw.tmp <- fn.tmp |>  # extr bandwidth
-            str_remove("samp_dist_bw_") |>
-            str_remove(".Rds") |> 
-            as.numeric()
-          cat(paste0("\n\n\tj = ", j, "\tfn.tmp = ", fn.tmp, "   bw = ", bw.tmp))
-          fp.tmp <- paste0("clean_data/sample_dist/", fn.tmp)
-          
-          # read sampling dist file
-          sample.dist.tmp <- readRDS(fp.tmp)
-          #
-          
-          for(k in seq_along(var.v)) { # inner loop along variables
-            var.tmp <- var.v[k]
-            cat("\n\t\t")
-            cat(crayon::bgBlue("k = ", k, "\t var = ", var.tmp))
-            sample.v <- ow.pts.dat[[var.tmp]]
-            dens.tmp <- sample.dist.tmp[[var.tmp]]
-            
-            #
-            class.tmp <- class(dens.tmp)
-            if(class.tmp == "histogram") {
-              surp.v <- calc_surprisal_hist_(dens.tmp, sample.v)
-            } else if (class.tmp == "table") {
-              surp.v <- calc_surprisal_tab_(dens.tmp, sample.v)
-            }
-            #
-            n.dat <- length(surp.v)
-            cat("\n\t\t")
-            cat(crayon::bgWhite("adding to data..."))
-            return.dat <- return.dat |> 
-              add_row(
-                var = rep(var.tmp, n.dat),
-                bw = rep(bw.tmp, n.dat),
-                surprisal = surp.v
-              )
-        }
-      } # end outer loop
-    saveRDS(return.dat, file="clean_data/plot/information_plot_dat.Rds")
-    } # end wrap
-  
-  {
-      var.v <- return.dat$var |> unique(); var.v
-      
-      # infinite values
-      return.dat |> 
-        group_by(var, bw) |> 
-        summarise(count_inf = sum(is.infinite(surprisal))) |> 
-        arrange(desc(count_inf))
-      
-      # max non-infinite value
-      max.non.inf <- return.dat |> 
-        filter(!is.infinite(surprisal)) |> 
-        select(surprisal) |> 
-        max(); max.non.inf
-      
-      replace.inf <- max.non.inf
-      
-      # adjust infinite values to slightly above max
-      plot.dat <- return.dat |> 
-        mutate(surprisal = if_else(is.infinite(surprisal), replace.inf + runif(n=1, min=2, max=5), surprisal))
-      
-      for(i in seq_along(var.v)) {
-        
-        { # prep for plot
-          var.tmp <- var.v[i]
-          cat("\nViewing : ")
-          cat(crayon::bgBlue(var.tmp))
-          p1.dat <- plot.dat |> 
-            filter(var == var.tmp) |> 
-            mutate(
-              plt.x = bw + runif( n=nrow(p1.dat), min=-12.5, max=12.5 ),
-              plt.y = surprisal )
-          
-          surp.v <- p1.dat$surprisal
-          mean.surprisal <- mean(surp.v, na.rm=T); mean.surprisal
-          median.surprisal = median(log(surp.v), na.rm=T); median.surprisal
-          
-          central.dat <- p1.dat |> 
-            group_by(bw) |> 
-            summarise(mean = mean(plt.y),
-                      median = median(plt.y)) |>
-            mutate(skew = (mean-median)^2) |> 
-            ungroup() |> 
-            pivot_longer(cols=2:3, names_to="centrality", values_to = "val")
-      }
-      
-      
-      { # plot
-        clrs <- c("mean" = "violet", "median" = "deeppink")
-        plot.tmp <- p1.dat |> 
-          ggplot(aes(x=plt.x, y= log(plt.y) )) + 
-          theme(
-            plot.title = element_text(size=24),
-            axis.text.x = element_text(size=14, angle=0),
-            panel.border = element_blank(),
-            panel.grid.major = element_blank(), 
-            panel.grid.minor = element_blank(),
-            panel.background = element_rect(fill="black")
-            ) + 
-          geom_hex(bins=30) +
-          geom_point(data=central.dat, aes(x=bw, y=log(val), size=skew, color=centrality)) + 
-          labs(title = paste0(var.tmp, " mean IC = ", round(mean.surprisal, 1) ), x = "bandwidth", y="log(Ix)" ) +
-          scale_color_manual(values = clrs) +
-          scale_fill_viridis_c(option="D", name="frequency")
-        plot(plot.tmp)
-      }
-      
-      
-      cat("\nPress any key for next...")
-      prpt <- readline(prompt=" ")
+    dens.files <- list.files("clean_data/sample_dist")
+    source("functions/calc_surprisal_.R")
+    calc_surprisal_(dens.files, verbose=T, DBG=F)    
+    
+    {# DBG
+      i = 1; k=28
     }
     
+    source("functions/plot_surprisal_.R")
+    plot_surprisal_()
+      
   }
-  
-  
 }
 

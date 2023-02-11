@@ -4,9 +4,6 @@ require(assertthat)
 #'
 calc_surprisal_tab_ <- function(tab.in, sample.v.in) {
   assert_that(class(tab.in) == "table")
-  if(class(sample.v.in) == "factor") {
-    sample.v.in <- sample.v.in |> as.numeric()
-  }
   tab.tbl <- tab.in |> 
     as_tibble() |> 
     mutate(prob = n/sum(n))
