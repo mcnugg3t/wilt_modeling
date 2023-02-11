@@ -177,9 +177,7 @@
   
 }
 
-#
-# compute sampling distribution for each kde - both continuous and discrete variables
-#
+####### COVARIATE SAMPLING DISTRIBUTIONS ########
 {
   # prep
   {
@@ -187,32 +185,35 @@
     gc()
     soils.df <- readRDS("clean_data/soils_df.Rds")
     dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
-    dat.in <- subset(dat.10, subset=c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s"), negate=T)
+    dat.in <- terra::subset(dat.10, subset=c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s"), negate=T)
   }
   
   #
   {
     rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
-    saveRDS(rm.vars, file="clean_data/rm_vars.Rds")
-    cont.var.v <- c("gw_10", "bd", "clay", "ph", "sand", "silt", 
+      saveRDS(rm.vars, file="clean_data/rm_vars.Rds")
+    
+    continuous.variables <- c("gw_10", "bd", "clay", "ph", "sand", "silt", 
                     "aspect", "channel_dist_s5", "channel_dist_s7", 
                     "conv_ind", "elev", "hillshade", "ls", "plan_curv",
                     "prof_curv", "rsp", "slope", "topo_wet", "total_catch", 
                     "val_depth", "wl2_oakprob_10")
     source("functions/create_interact_terms_.R")
-    interact.v <- create_interact_terms_(cont.var.v, verbose=T, DBG=F)
+    interact.v <- create_interact_terms_(continuous.variables, verbose=T, DBG=F)
     saveRDS(interact.v, file="clean_data/interact_v.Rds")
     
-    source("functions/sample_kdes_.R")
-    sample_kdes_(
-      covar.rast = dat.in,
-      join.dat = soils.df,
-      n.sim=1e5, 
-      interact.v = interact.v,
-      rm.vars = rm.vars,
-      verbose=T, 
-      DBG=T)
+    source("functions/create_sampling_distributions_.R")
+    create_sampling_distributions_(covar.rast = dat.in,
+                                   join.dat = soils.df,
+                                   n.sim=5e4,
+                                   interact = T,
+                                   interact.v = interact.v,
+                                   rm.vars = rm.vars,
+                                   verbose=T, 
+                                   DBG=T)
   }
+
+
 }
 
 ##
