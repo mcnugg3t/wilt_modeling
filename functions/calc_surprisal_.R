@@ -5,7 +5,7 @@ source("functions/sub_functions/calc_surprisal_tab_.R")
 #'
 #'
 #'
-calc_surprisal_ <- function(dens.files, verbose=T, DBG=F) {
+calc_surprisal_ <- function(dens.files, ow.pts.dat, verbose=T, DBG=F) {
   for(i in seq_along(dens.files)) { # for each density file
     fn.tmp <- dens.files[i] # extr filename
     bw.tmp <- fn.tmp |>  # extr bandwidth from filename

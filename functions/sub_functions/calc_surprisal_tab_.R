@@ -6,8 +6,11 @@ calc_surprisal_tab_ <- function(tab.in, sample.v.in) {
   assert_that(class(tab.in) == "table")
   tab.tbl <- tab.in |> 
     as_tibble() |> 
-    mutate(prob = n/sum(n)) |> 
-    mutate(val.v = as.numeric(val.v))
+    mutate(prob = n/sum(n))
+  # if(class(sample.v.in) == "factor") {
+  #   tab.tbl <- tab.tbl |> 
+  #     mutate(val.v = as.numeric(val.v))
+  # }
   surprisal.v <- sample.v.in |> 
     vapply(FUN = function(x) {
       ind.tmp <- which(tab.tbl[[1]] == x)

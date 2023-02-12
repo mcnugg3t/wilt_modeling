@@ -1,7 +1,7 @@
 require(assertthat)
 require(crayon)
-#' returns vector of suprisal values, takes hist.in (histogram), sample.v.in (vector, numeric) as inputs
-#'
+#' returns vector of IC values, takes sampling distribution histogram (hist.in), sample.v.in (vector, numeric) as inputs
+#' 
 #'
 calc_surprisal_hist_ <- function(hist.in, sample.v.in, DBG=F) {
   assert_that(class(hist.in) == "histogram")

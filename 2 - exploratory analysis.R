@@ -10,9 +10,9 @@
   library(assertthat)
 } |> suppressPackageStartupMessages()
 
+
 ##
-##### 0 - construct spatstat ppp objects and save #### 
-{ 
+{ ##### 0 - construct spatstat ppp objects and save #### 
   dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
   dat.30 <- terra::rast("clean_data/joindat_30_1200.tif")
   ow.pts <- terra::vect("clean_data/ow_pts_clean.shp")
@@ -26,8 +26,7 @@
   saveRDS(ow.ppp.30, file="clean_data/ow_ppp_30.Rds")
 }
 ##
-##### 1 - Besag's L-function : estimate + gradient #### 
-{
+{ ##### 1 - Besag's L-function : estimate + gradient #### 
   ow.ppp <- readRDS("clean_data/ow_ppp.Rds")
   L.res <- Lest(ow.ppp, correction="translation")
   L.res |> plot()
@@ -42,8 +41,7 @@
     ggplot(aes(x=r, y=val, color=type)) + geom_smooth(span=0.10)
 }
 ##
-##### 2 - generate densities across parameter grid #### 
-{
+{ ##### 2 - generate densities across bw values #### 
   #
   # estimate bandwidth using 30-m x 30-m quadrature scheme
   { 
@@ -69,13 +67,10 @@
       )
   }
 }
-
 ##
-## 3 - from each density, create a list of point patterns
-{
+{ ##### 3 - from each density, create a list of point patterns ###### 
   #
-  # prep
-  {
+  { # prep
     rm(list=ls())
     gc()
     cln.dat <- terra::rast("clean_data/joindat_10_1200.tif") # load full clean data
@@ -129,9 +124,8 @@
       }
     }
 }
-
-# simulation envelope for L under varying bw values
-{
+##
+{ ##### 4 - simulation envelope for L under varying bw values ########### 
   { # setup
     rm(list=ls())
     gc()
@@ -171,14 +165,12 @@
     saveRDS(envelope.tmp, file=save.tmp)
     }
 }
-
-# Fry plot locally + globally (?)
-{
+##
+{ ####### 5 - Fry plot locally + globally ########
   
 }
-
-####### COVARIATE SAMPLING DISTRIBUTIONS ########
-{
+##
+{ ####### 6 - COVARIATE SAMPLING DISTRIBUTIONS ########
   # prep
   {
     rm(list=ls())
@@ -186,8 +178,9 @@
     soils.df <- readRDS("clean_data/soils_df.Rds")
     dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
     dat.in <- terra::subset(dat.10, subset=c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s"), negate=T)
+    rm(dat.10)
+    gc()
   }
-  
   #
   {
     rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
@@ -205,7 +198,7 @@
     source("functions/create_sampling_distributions_.R")
     create_sampling_distributions_(covar.rast = dat.in,
                                    join.dat = soils.df,
-                                   n.sim=1e3,
+                                   n.sim=5e4,
                                    interact = T,
                                    interact.v = interact.v,
                                    rm.vars = rm.vars,
@@ -215,10 +208,8 @@
 
 
 }
-
 ##
-## Calculate surprisal distributions
-{
+{ ####### 7 - SURPRISAL DISTRIBUTIONS ########
   
   { # setup for surprisal
     rm(list=ls())
@@ -238,26 +229,24 @@
     source("functions/add_interact_.R")
     interact.dat <- add_interact_(ow.pts.dat, interact.v)
     var.v <- names(interact.dat); var.v
+    rm(ow.pts.dat)
+    gc()
     
     return.dat <- tibble(
       var = character(),
       bw = numeric(),
       surprisal = numeric()
     )
-    
-    
   }
-  
-  
   
   { ## CALC SURPRISAL
     dens.files <- list.files("clean_data/sample_dist")
     source("functions/calc_surprisal_.R")
-    calc_surprisal_(dens.files, verbose=T, DBG=F)    
+    calc_surprisal_(dens.files, interact.dat, verbose=T, DBG=F)    
     
+    plot.dat <- readRDS("clean_data/plot/information_plot_dat.Rds")
     source("functions/plot_surprisal_.R")
     plot_surprisal_()
-      
   }
 }
 
