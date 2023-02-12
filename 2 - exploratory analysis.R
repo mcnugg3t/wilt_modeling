@@ -205,7 +205,7 @@
     source("functions/create_sampling_distributions_.R")
     create_sampling_distributions_(covar.rast = dat.in,
                                    join.dat = soils.df,
-                                   n.sim=5e4,
+                                   n.sim=1e3,
                                    interact = T,
                                    interact.v = interact.v,
                                    rm.vars = rm.vars,
@@ -254,10 +254,6 @@
     dens.files <- list.files("clean_data/sample_dist")
     source("functions/calc_surprisal_.R")
     calc_surprisal_(dens.files, verbose=T, DBG=F)    
-    
-    {# DBG
-      i = 1; k=28
-    }
     
     source("functions/plot_surprisal_.R")
     plot_surprisal_()

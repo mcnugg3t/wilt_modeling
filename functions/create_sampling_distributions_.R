@@ -115,8 +115,11 @@ create_sampling_distributions_ <- function(covar.rast, join.dat, n.sim,
        
         if(class.tmp == "numeric") {
           cat("\t"); cat(crayon::bgRed("continuous branch"))
+          n.vals.tmp <- length(  unique(  val.v))
+          cat(paste0("\n\n\nn.vals.tmp = ", n.vals.tmp, "\n\n\n"))
+          n.breaks.tmp <- if_else(n.vals.tmp  < 100, n.vals.tmp, as.integer(100 ))
           sample.dist.tmp <- hist(val.v,
-                                  breaks=n.breaks) # compute histogramn
+                                  breaks=n.breaks.tmp) # compute histogramn
         } else if(class.tmp == "character" | class.tmp == "factor" | class.tmp == "integer") {
           cat("\t"); cat(crayon::bgBlue("discrete branch"))
           sample.dist.tmp <- table(val.v) # compute table

@@ -6,6 +6,7 @@ expl_data/*
 tmp/*
 *.mxd
 docs/*
+scratch*
 
 # History files
 .Rhistory
