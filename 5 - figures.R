@@ -8,6 +8,42 @@
   library(terra)
 }
 
+{ ########## READ DENSITY #########
+  rm(list=ls())
+  gc()
+  dens.dat <- readRDS("clean_data/density/dens_bw_99.Rds")
+  tst1 <- dens.dat$v # 3111 rows, 2878 columns
+  tst2 <- dens.dat$v |> as.vector()
+  assert_that( 
+    all(
+      tst2[1:3111][!is.na(tst2[1:3111])] == tst1[,1][!is.na(tst1[,1])]) ) # check that as.vector unfolds column-wise := all non-NA values are same between first 3111 values as.vector and first column of matrix
+  # so it unfolds column-wise, with the result that coordinates should repeat the first x value, for each value in v.val 
+  dens.tbl <- tibble(
+    x = numeric(),
+    y = numeric()
+  )
+  # for each column
+  for(i in seq_len(ncol(tst1))) {
+    dens.tbl <- dens.tbl |> 
+      add_row(
+        x = rep(dens.dat$xcol[i], 3111),
+        y = dens.dat$yrow
+      )
+  }
+  dens.tbl <- dens.tbl |> 
+    add_column(val = tst2)
+  
+  fig <- plot_ly(
+    data = dens.tbl[!is.na(dens.tbl$val),], 
+    type="scatter3d",
+    mode="markers") |> 
+    add_markers(x = ~ x,
+                y = ~ y,
+                z = ~ val,
+                color = ~val)
+  fig
+}
+
 {
   # read base data
   dat.plt <- terra::rast("clean_data/joindat_10_1200.tif") |> 

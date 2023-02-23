@@ -21,7 +21,7 @@ define_study_area_ <- function(grd.int, wilt.buffer.dist, oak.buffer.dist, verbo
   ##
   
   ##
-  ## 1 : using OW buffer - e.g. include only cells points within 1200 m of observed infection
+  ## 1 : using OW buffer - e.g. include cells points within 1200 m of observed infection
   if(verbose) cat(crayon::bgBlue("\n\tconstructing wilt buffer = ", wilt.buffer.dist, " m..."))
   # read OW points
   ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp") 
@@ -48,17 +48,11 @@ define_study_area_ <- function(grd.int, wilt.buffer.dist, oak.buffer.dist, verbo
   ##
   ## 3  extract manage polygon data at mask.ow.buff pts
   if(verbose) cat(crayon::bgBlue("\n\textracting manage data..."))
-  extr.manage <- terra::extract(manage.rast, crds(mask.ow.buff.2))
-  # identify indices of points where something not USFS was extracted
-  extr.ind <- which( extr.manage[,1] %in% c("O", "T", "W") ) 
-  # crop values where not USFS
-  if(verbose) cat("\tmasking...")
-  values(mask.ow.buff.2)[!is.na(values(mask.ow.buff.2))][extr.ind] <- NA
-  if(DBG) cat( paste0("\n\t\tcurrent count cells with values = ", sum(!is.na(values(mask.ow.buff.2)))) )
-  rm(extr.manage, extr.ind)
-  gc()
-  names(mask.ow.buff.2) <- "study area"
-  mask.ow.buff.3 <- ifel(!is.na(mask.ow.buff.2), 1, NA)
+  cnnf.mask <- ifel(
+                  manage.rast %in% c("O", "T", "W"), 
+                  NA,
+                  manage.rast)
+  mask.ow.buff.3 <- mask(mask.ow.buff.2, cnnf.mask)
 
   if(grd.int == 10) {
     terra::writeRaster(mask.ow.buff.3, filename="mid_data/10/study_area/sa_base.tif", overwrite=T)
@@ -67,4 +61,6 @@ define_study_area_ <- function(grd.int, wilt.buffer.dist, oak.buffer.dist, verbo
   }
   
 }
-
+# clean.dat <- terra::rast("clean_data/joindat_10_1200.tif")
+# manage.tmp <- clean.dat[["manage_rast_10]]
+# grd.int = 30; wilt.buffer.dist = 500; oak.buffer.dist=40; verbose=T; DBG=T
