@@ -27,18 +27,36 @@
 }
 ##
 { ##### 1 - Besag's L-function : estimate + gradient #### 
-  ow.ppp <- readRDS("clean_data/ow_ppp.Rds")
+  ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
   L.res <- Lest(ow.ppp, correction="translation")
-  L.res |> plot()
+  L.res |> plot(main = "Empirical L-function (translation correction) compared to theoretical")
+  
   Lres.dat <- L.res |> 
     as.data.frame() |> 
     mutate(grad.L = (trans-lag(trans))/(r - lag(r)),
            grad.L.theo = (theo - lag(theo))/(r-lag(r))); Lres.dat
+  
+  # Lres.dat |> 
+  #   filter(r < 2000) |> 
+  #   select(r, grad.L, grad.L.theo) |> 
+  #   pivot_longer(cols=2:3, names_to = "type", values_to="val")
+  
   Lres.dat |> 
     filter(r < 2000) |> 
-    select(r, grad.L, grad.L.theo) |> 
-    pivot_longer(cols=2:3, names_to = "type", values_to="val") |> 
-    ggplot(aes(x=r, y=val, color=type)) + geom_smooth(span=0.10)
+    select(r, trans, theo) |> 
+    pivot_longer(cols=2:3, names_to="type", values_to="val") |> 
+    ggplot(aes(x=r, y=val, color=type)) +
+    geom_smooth()
+  
+  Lres.dat |> 
+    filter(r < 2000) |> 
+    select(r, grad.L) |> 
+    ggplot(aes(x = r, y = grad.L)) + 
+      geom_point() +
+      geom_smooth(span=0.2) +
+      xlim(0, 700) +
+      labs(title="Gradient empirical L-function, smoothed with span=0.20", x="r", y="L(r)") +
+      theme(plot.title = element_text(size=20))
 }
 ##
 { ##### 2 - generate densities across bw values #### 
@@ -53,17 +71,33 @@
     bw.res <- est_bandwidth_(kern.v, ow.ppp.30, verbose=T)
     saveRDS(bw.res, file="clean_data/bw_res_30.Rds")
   }
+  
+  # create bandwidth vector
+  { 
+    bw.v <- readRDS("clean_data/bw_res_30.Rds")
+    range.bw <- seq(from=bw.v[1], to=bw.v[2], length.out = 7)
+    inc <- range.bw[2]- range.bw[1]
+    f1 <- range.bw[1]
+    l1 <- range.bw[7]
+    range.bw <- c(f1-2*inc, f1-inc, range.bw, l1+inc, l1+2*inc)
+  }
+  
   #
   # generate densities
   { 
     rm(list=ls())
     gc()
     ow.ppp.10 <- readRDS("clean_data/ow_ppp_10.Rds")
-    bw.res <- readRDS("clean_data/bw_res_30.Rds")
     source("functions/generate_densities_.R")
+    # wide search
     generate_densities_(
       ow.ppp = ow.ppp.10,
-      bw.v = c(bw.res[[2]], bw.res[[1]])
+      bw.v = range.bw
+    )
+    # fine search
+    generate_densities_(
+      ow.ppp = ow.ppp.10,
+      bw.v = c(65, 70, 80, 85, 90, 95, 105, 110)
       )
   }
 }
@@ -73,97 +107,20 @@
   { # prep
     rm(list=ls())
     gc()
-    cln.dat <- terra::rast("clean_data/joindat_10_1200.tif") # load full clean data
-    ow.df <- cln.dat[["ow_rast_10"]] |>  # calc ow cell locations and counts
-      as.data.frame(xy=T) |> 
-      filter(ow_rast_10 > 0)
-    rm(cln.dat)
-    gc()
-    ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds") # load ppp
-    wilt.owin <- ow.ppp$window
-    file.v <- list.files("clean_data/density/")
+    source("functions/create_ppps_.R")
   }
-  
-  #
-  # big loop
-  {
-  source("functions/create_ppps_.R")
-      for(j in seq_along(file.v)) { # over each density file
-        # prep
-        fl.tmp <- file.v[j]
-        cat(paste0("\n\n\nj = ", j, "\n\tfl.tmp = ", fl.tmp))
-        path.tmp <- paste0("clean_data/density/", fl.tmp)
-        bw.num <- fl.tmp |> 
-          str_remove("dens_bw_") |> 
-          str_remove(".Rds") |> 
-          as.numeric()
-        save.tmp <- paste0("clean_data/sample/ppp_list_bw_", bw.num, ".Rds" )
-        cat(paste0("\n\tsave.tmp = ", save.tmp))
-        
-        # read density
-        cat(paste0("\n\treading density.df, na's -> 0..."))
-        density.tmp <- readRDS(path.tmp) |> 
-          as.data.frame() |> 
-          mutate(val.old = value) |> 
-          mutate(value = if_else(is.na(value), 0, value))
-        cutoff.tmp <- (0-density.tmp$value)^2 |> quantile(probs=c(0.6))
-        density.df <- density.tmp |> 
-          mutate(value = if_else( ((0-value)^2) < cutoff.tmp, 0, value), # if distance between 0 and value is < 60th_percentile, set to 0
-                 value = value/sum(value, na.rm=T))
-        n.dens = density.df |> filter(value > 0) |> nrow()
-        cat(paste0("\n\tcutoff = ", cutoff.tmp, " (", n.dens, ")"))
-        cat(crayon::bgMagenta("\tcreating ppp list..."))
-        ppp.list <- create_ppps_(
-          density.df,
-          ow.df,
-          n.sim=100,
-          owin.in = wilt.owin
-        )
-        cat("\n\t\tsaving...")
-        saveRDS(ppp.list, file=save.tmp)
-      }
-    }
+  create_ppps_(n.sim=100, verbose=T, DBG=T)
 }
 ##
 { ##### 4 - simulation envelope for L under varying bw values ########### 
   { # setup
     rm(list=ls())
     gc()
+    dens.files <- list.files("clean_data/sample/")
     ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
-    files.tmp <- list.files("clean_data/sample/")
+    source("functions/simulation_envelopes_L_.R")
   }
-  # loop over point patterns
-  for(j in seq_along(files.tmp)) {
-    # setup
-    fn.tmp <- files.tmp[j]
-    fp.tmp <- paste0("clean_data/sample/", fn.tmp)
-    cat(paste0("\n\n\tj = ", j, "\tfl.tmp = ", fn.tmp))
-    bw.tmp <- fn.tmp |> 
-        str_remove("ppp_list_bw_") |> 
-        str_remove(".Rds")
-    save.tmp <- paste0("clean_data/envelope_", bw.tmp, ".Rds")
-    save.img <- paste0("clean_data/envelope/img_", bw.tmp, ".jpg")
-    cat(paste0("\n\t\tsave.tmp = ", save.tmp, "\n\t\tsave.img = ", save.img, "\n\t"))
-    #
-    cat(crayon::bgCyan("loading ppp list..."))
-    ppp.list.tmp <- readRDS(fp.tmp)
-    cat("\n\t")
-    cat(crayon::bgYellow("calc envelope...\n"))
-    envelope.tmp <- envelope(
-        ow.ppp, 
-        fun=Lest, 
-        funargs=list(rmax=700,correction="border"),
-        simulate= ppp.list.tmp # list of point patterns
-    )
-    cat("\n\t")
-    cat(crayon::bgWhite("saving plot..."))
-    jpeg(file=save.img)
-    envelope.tmp |> plot(main=paste0("bandwidth: ", bw.tmp))
-    dev.off()
-    cat("\n\t")
-    cat(crayon::bgWhite("saving envelope..."))
-    saveRDS(envelope.tmp, file=save.tmp)
-    }
+  simulation_envelopes_L_(dens.files, ow.ppp, verbose=T, DBG=T)
 }
 ##
 { ####### 5 - Fry plot locally + globally ########
@@ -171,32 +128,33 @@
 }
 ##
 { ####### 6 - COVARIATE SAMPLING DISTRIBUTIONS ########
-  # prep
-  {
+  
+  { # prep
     rm(list=ls())
     gc()
-    soils.df <- readRDS("clean_data/soils_df.Rds")
-    dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
-    dat.in <- terra::subset(dat.10, subset=c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s"), negate=T)
-    rm(dat.10)
-    gc()
-  }
-  #
-  {
-    rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
-      saveRDS(rm.vars, file="clean_data/rm_vars.Rds")
     
+    # variables to remove
+    rm.vars <- c("alpha", "hb", "ksat", "lambda", "n", "om", "theta_r", "theta_s")
+    saveRDS(rm.vars, file="clean_data/rm_vars.Rds")
+    
+    # all possible interactions between continuous variables
     continuous.variables <- c("gw_10", "bd", "clay", "ph", "sand", "silt", 
-                    "aspect", "channel_dist_s5", "channel_dist_s7", 
-                    "conv_ind", "elev", "hillshade", "ls", "plan_curv",
-                    "prof_curv", "rsp", "slope", "topo_wet", "total_catch", 
-                    "val_depth", "wl2_oakprob_10")
+                              "aspect", "channel_dist_s5", "channel_dist_s7", 
+                              "conv_ind", "elev", "hillshade", "ls", "plan_curv",
+                              "prof_curv", "rsp", "slope", "topo_wet", "total_catch", 
+                              "val_depth", "wl2_oakprob_10")
     source("functions/create_interact_terms_.R")
     interact.v <- create_interact_terms_(continuous.variables, verbose=T, DBG=F)
     saveRDS(interact.v, file="clean_data/interact_v.Rds")
     
+    soils.df <- readRDS("clean_data/soils_df.Rds")
+    dat.10 <- terra::rast("clean_data/joindat_10_1200.tif")
+    dat.in <- terra::subset(dat.10, subset=rm.vars, negate=T)
+    rm(dat.10)
+    gc()
     source("functions/create_sampling_distributions_.R")
-    create_sampling_distributions_(covar.rast = dat.in,
+  }
+  create_sampling_distributions_(covar.rast = dat.in,
                                    join.dat = soils.df,
                                    n.sim=5e4,
                                    interact = T,
@@ -204,9 +162,6 @@
                                    rm.vars = rm.vars,
                                    verbose=T, 
                                    DBG=T)
-  }
-
-
 }
 ##
 { ####### 7 - SURPRISAL DISTRIBUTIONS ########
@@ -241,12 +196,56 @@
   
   { ## CALC SURPRISAL
     dens.files <- list.files("clean_data/sample_dist")
+    bw.select.v <- c(70, 74, 80, 85, 90, 95, 99, 105, 110)
     source("functions/calc_surprisal_.R")
-    calc_surprisal_(dens.files, interact.dat, verbose=T, DBG=F)    
+    calc_surprisal_(dens.files, interact.dat, bw.select.v, verbose=T, DBG=F)    
+  }
+  
+  { ## PLOT SUPRISAL
+    plot.dat <- readRDS("clean_data/plot/information_plot_dat.Rds") |> 
+      mutate(surprisal = if_else(is.infinite(surprisal), max(surprisal)+runif(n=1, min=0, max=4), surprisal))
     
-    plot.dat <- readRDS("clean_data/plot/information_plot_dat.Rds")
+    tst.v = plot.dat |> 
+      filter(var == "ph x hillshade") |> 
+      pull(surprisal)
+    
+    # for a given variable, what are median and SD of surprisal across all bw values
+    p1.dat <- plot.dat |> 
+      group_by(var) |> 
+      summarise(med.ic = median(surprisal, na.rm=T),
+                sd.ic = sd(surprisal, na.rm=T)) |> 
+      arrange(desc(med.ic)) |> 
+      mutate(rank = row_number())
+    
+    # remove all interactions except top 10
+    is.interact <- p1.dat$var |> str_detect(pattern=" x ") |> as.numeric(); is.interact
+    subset.rows = as.numeric(!is.interact); subset.rows
+    subset.rows[1:10] = 1; 
+    
+    
+    p2.dat = p1.dat[which(subset.rows == 1), ] 
+    
+    p2.dat |> 
+      ggplot(aes(x=sd.ic, y=med.ic, color=var)) +
+        geom_label(aes(label=var), size=5) +
+        labs(title = "Variable Information Content: Median vs SD", x="Standard deviation of information content", y="Median information content") +
+        theme(plot.title=element_text(size=30),
+              axis.title = element_text(size=20))
+    
+    p1.dat |> 
+      filter(rank <= 70) |> 
+      ggplot(aes(x=med.ic, y=sd.ic, size=rank, color=var)) + geom_point() + geom_label(aes(x=med.ic, y=sd.ic, label=var))
+    
+    p2.dat <- plot.dat |> 
+      group_by(var, bw) |> 
+      summarise(med.ic = median(surprisal)) |> 
+      group_by(var) |> 
+      summarise(max.med.ic = max(med.ic)) |> 
+      arrange(desc(max.med.ic)) |> 
+      mutate(index = row_number())
+    p2.dat |> ggplot(aes(x=index, y=max.med.ic)) + geom_col()
     source("functions/plot_surprisal_.R")
-    plot_surprisal_()
+    plot_surprisal_(plot.dat)
   }
 }
 

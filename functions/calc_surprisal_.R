@@ -5,13 +5,14 @@ source("functions/sub_functions/calc_surprisal_tab_.R")
 #'
 #'
 #'
-calc_surprisal_ <- function(dens.files, ow.pts.dat, verbose=T, DBG=F) {
+calc_surprisal_ <- function(dens.files, ow.pts.dat, bw.select.v, verbose=T, DBG=F) {
   for(i in seq_along(dens.files)) { # for each density file
     fn.tmp <- dens.files[i] # extr filename
     bw.tmp <- fn.tmp |>  # extr bandwidth from filename
       str_remove("samp_dist_bw_") |>
       str_remove(".Rds") |> 
       as.numeric()
+    if(!(bw.tmp %in% bw.select.v)) next
     if(verbose) cat(paste0("\n\n\ti = ", i, "\tfn.tmp = ", fn.tmp, "   bw = ", bw.tmp)) # debug print
     fp.tmp <- paste0("clean_data/sample_dist/", fn.tmp) # assemble path
     sample.dist.tmp <- readRDS(fp.tmp) # read sampling dist file

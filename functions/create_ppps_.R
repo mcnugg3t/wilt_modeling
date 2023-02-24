@@ -1,98 +1,72 @@
 require(terra)
 require(tidyverse)
 require(crayon)
-#' this function generates list of n.sim random point patterns for a given density
-#' 0) takes density object as df, ow.rast, n.sim 1) determines number of cells ~ poisson(500) and their locations ~ density
+require(assertthat)
+source("functions/sub_functions/create_one_ppp_list_.R")
+source("functions/mask_density_.R")
+#' top level function which calls create_one_ppp_list_
+#' 
 #'
-create_ppps_ <- function(density.df, ow.df, n.sim, owin.in, N.OW.CELLS=500, verbose=T, DBG=F) {
-  cat(crayon::bgGreen("\n\tFUNCT : create_ppps_"))
+create_ppps_ <- function(n.sim, verbose=T, DBG=F) {
+  if(verbose) cat(crayon::bgGreen("\nFUNCT : create_ppps_"))
   
-  if(verbose) cat( paste0("\n\tdrawing n.cells infected ~ Poisson(", N.OW.CELLS, ")") )
-  n.pts = rpois(
-    n=n.sim, 
-    lambda=N.OW.CELLS)
-  
-  ind.mat <- matrix(
-    data=0, 
-    nrow=n.sim, 
-    ncol=max(n.pts))
-  
-  if(verbose) cat(paste0("\n\tassigning cell totals to ", n.sim, " vectors with avg. length ", 
-                         mean(n.pts), "  ~ density (takes time)\n\t\t1 -> 10  :  ") )
-  
-  prog.inc <- n.sim %/% 10 
-  for(j in 1:n.sim) {
-    if(j %% prog.inc == 0) cat( paste0( (j %/% prog.inc), ".." ) )
-    samp.tmp <- sample(
-      x = 1:nrow(density.df),
-      size = n.pts[j], 
-      replace = T, 
-      prob = density.df$value)
-    ind.mat[j,1:length(samp.tmp)] <- samp.tmp
+  # INIT
+  {
+    file.v <- list.files("clean_data/density/") # density files
+    complete.v <- list.files("clean_data/sample/") # already calculated ppp lists
+    cln.dat <- terra::rast("clean_data/joindat_10_1200.tif") # load full clean data
+    ow.df <- cln.dat[["ow_rast_10"]] |>  # calc ow cell locations and counts
+      as.data.frame(xy=T) |> 
+      filter(ow_rast_10 > 0)
+    sa.rast = cln.dat[["study area"]]
+    ow.ppp = readRDS("clean_data/ow_ppp_10.Rds") # load ppp
+    wilt.owin <- ow.ppp$window
+    rm(cln.dat, ow.ppp)
+    gc()
   }
   
-  ow.ct.tab <- ow.df$ow_rast_10 |> table()
-  ow.ct.sum <- ow.ct.tab |> sum()
-  ct.probs <- c(ow.ct.tab[1]/ow.ct.sum, ow.ct.tab[2]/ow.ct.sum, ow.ct.tab[3]/ow.ct.sum)
-  
-  
-  ##
-  ## BIG LOOP
-  ##
-  if(verbose) cat(paste0("\n\tcreating ppps (n=", n.sim  ,"), (takes time)\n\t\t2 -> 100  :  ") )
-  ppp.list.return <- list()
-  prog.inc <- n.sim %/% 50
-  for(i in 1:n.sim) {
-    if(i %% prog.inc == 0) cat( paste0( (i %/% prog.inc)*2, ".." ) )
-    ind.tmp <- ind.mat[i,][ind.mat[i,] > 0] # get indices from matrix
-    assert_that(length(ind.tmp) == n.pts[i]) # check
+  # LOOP
+  for(j in seq_along(file.v)) { # over each density file
+    #
+    fl.tmp <- file.v[j]
     
-    ##
-    ## create tibble with appropriate coordinates, add wilt counts within cells - empirical dist
-    ind.tbl <- ind.tmp |>
-      as_tibble() |>
-      rename(index = value) |>
-      add_column(
-        x = density.df$x[ind.tmp],
-        y = density.df$y[ind.tmp])
-    ind.tbl <- ind.tbl |>
-      add_column(
-        count = sample(
-          x=c(1,2,3),
-          size=nrow(ind.tbl),
-          replace=T,
-          prob = ct.probs
-        ))
+    cat(paste0("\n\nj = ", j, "\n\tfl.tmp = ", fl.tmp))
+    path.tmp <- paste0("clean_data/density/", fl.tmp)
+    bw.num <- fl.tmp |> 
+      str_remove("dens_bw_") |> 
+      str_remove(".Rds") |> 
+      as.numeric()
+    save.sml <- paste0("ppp_list_bw_", bw.num, ".Rds" )
+    if(save.sml %in% complete.v) next
+    save.tmp <- paste0("clean_data/sample/", save.sml)
+    if(verbose) cat(paste0("\n\tsave.tmp = ", save.tmp))
+    #
+    # read density
+    if(verbose) cat(paste0("\n\treading density.df, masking..."))
     
-    ##
-    ## unfold ind.ext
-    ind.ext <- ind.tbl
-    while(sum(ind.ext$count > 1) > 0) {
-      subs.rows <- ind.ext[ind.ext$count > 1,]
-      ind.ext <- rbind(ind.ext, subs.rows)
-      new.counts <- ind.ext$count[ind.ext$count > 1] - 1
-      ind.ext$count[ind.ext$count > 1] <- new.counts
-    }
-    rm(ind.tbl)
-    gc()
-    # perturb each point
-    coords.df <- ind.ext |> 
-      select(x, y) |> 
-      mutate(
-        x = x+runif(n=nrow(ind.ext),min=-5,max=5),
-        y = y+runif(n=nrow(ind.ext),min=-5,max=5)
-      )
+    density.df <- readRDS(path.tmp) |> 
+      mask_density_(sa.rast = sa.rast) |> 
+      as.data.frame(xy=T) |> 
+      mutate(value = if_else(
+        condition = (is.na(value) | value<0),
+        true=0,
+        false=value)) |> 
+      mutate(value = value/sum(value, na.rm=T))
+    assert_that( (sum(density.df$value)-1)^2 < 1e-9 )
+    assert_that(sum(is.na(density.df$value)) == 0)
     
-    # create ppp
-    ppp.tmp <- ppp(
-      x = coords.df[["x"]], 
-      y = coords.df[["y"]], 
-      window = owin.in)
+    if(verbose) cat(crayon::bgMagenta("\tcreating ppp list..."))
     
-    ppp.list.return[[i]] <- ppp.tmp
-  } 
-  ##
-  ## END BIG LOOP
-  return(ppp.list.return)
+    ppp.list <- create_one_ppp_list_(
+      density.df,
+      ow.df,
+      n.sim = n.sim,
+      owin.in = wilt.owin,
+      n.ow.cells = nrow(ow.df)
+    )
+    
+    cat("\n\t\tsaving...")
+    saveRDS(ppp.list, file=save.tmp)
+  }
 }
   
