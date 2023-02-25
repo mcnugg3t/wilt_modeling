@@ -8,40 +8,85 @@
   library(terra)
 }
 
-{ ########## READ DENSITY #########
+{ ########### MENGES & LOUCKS 1984 #############
+  x.v = seq(0, 500, by=1)
+  y.v = 0.628*log(x.v, base=10) - 0.656
+  plot.tbl <- tibble(
+    x = x.v,
+    y = y.v
+  ) |> 
+    mutate(grad = (lag(y)-y)/(lag(x)-x)  ) |>
+    mutate(
+      y = if_else(
+        condition= is.infinite(y)|is.na(y),
+        true=0,
+        false=y),
+      grad = if_else(condition= is.infinite(grad)|is.na(grad),
+                  true=0,
+                  false=grad),
+      grad = grad/max(grad)
+      ) |>
+    filter(y > 0 & y <= 1) |> 
+    mutate(grad = grad / (max(grad)*0.5) ) |> 
+    pivot_longer(cols = 2:3, 
+                 names_to = "type",
+                 values_to = "val")
+  
+  plot.tbl |> 
+    ggplot(aes(x=x,y=val, color=type)) + 
+    geom_line(linewidth=2) + 
+    ylim(0, 1) + 
+    theme_minimal() + 
+    labs(title="Cumulative density of new infections vs distance from old infections (d)", x="d", y="Cumulative Density") +
+    theme(title=element_text(size=30), axis.text = element_text(size=24))
+}
+
+{ # plot KDE consistent with clustering pattern
   rm(list=ls())
   gc()
-  dens.dat <- readRDS("clean_data/density/dens_bw_99.Rds")
-  tst1 <- dens.dat$v # 3111 rows, 2878 columns
-  tst2 <- dens.dat$v |> as.vector()
-  assert_that( 
-    all(
-      tst2[1:3111][!is.na(tst2[1:3111])] == tst1[,1][!is.na(tst1[,1])]) ) # check that as.vector unfolds column-wise := all non-NA values are same between first 3111 values as.vector and first column of matrix
-  # so it unfolds column-wise, with the result that coordinates should repeat the first x value, for each value in v.val 
-  dens.tbl <- tibble(
-    x = numeric(),
-    y = numeric()
-  )
-  # for each column
-  for(i in seq_len(ncol(tst1))) {
-    dens.tbl <- dens.tbl |> 
-      add_row(
-        x = rep(dens.dat$xcol[i], 3111),
-        y = dens.dat$yrow
-      )
-  }
-  dens.tbl <- dens.tbl |> 
-    add_column(val = tst2)
-  
+  library(spatstat)
+  library(plotly)
+  dens.dat.plt <- readRDS("clean_data/density/dens_bw___.Rds") |> 
+    as.data.frame() 
+  max.dens = max(dens.dat.plt$value, na.rm=T)
+  inc.tmp = max.dens/10
   fig <- plot_ly(
-    data = dens.tbl[!is.na(dens.tbl$val),], 
-    type="scatter3d",
-    mode="markers") |> 
-    add_markers(x = ~ x,
-                y = ~ y,
-                z = ~ val,
-                color = ~val)
+    data = dens.dat.plt,
+    type = "surface",
+    contours = list(
+      z = list(show=T, start=0, end=max.dens, size=inc.tmp)
+    ),
+    x = ~x, 
+    y = ~y, 
+    z = ~value)  |> add_surface()
   fig
+}
+
+{ ######### RATE OF INFECTION VS OAK CLS PROB #############
+  rm.vars <- readRDS("clean_data/rm_vars.Rds")
+  dat.cln <- terra::rast("clean_data/joindat_10_1200.tif") |> 
+    subset(subset=rm.vars, negate=T)
+  names(dat.cln)
+  
+  dat.plt <- terra::rast("clean_data/joindat_10_1200.tif") |> 
+    subset(subset=c("ow_rast_10", "wl2_cls_10", "wl2_oakprob_10")) |> 
+    as.data.frame() |> 
+    filter(wl2_cls_10 == 4230) |> 
+    mutate(tile10 = ntile(wl2_oakprob_10, 10)) |> 
+    group_by(tile10) |> 
+    summarise(rate_infect = sum(ow_rast_10, na.rm=T)/n())
+  
+  dat.plt |> 
+    mutate(rate_infect = rate_infect * 100) |> 
+    ggplot(aes(x=tile10, y=rate_infect)) +
+    geom_col() +
+    labs(title = "Oak wilt infection rate versus oak density decile (Wiscland2)", 
+         x="Decile: oak classification probability (WiscLand2)",
+         y="Infection rate (per km2)") +
+    theme(
+      plot.title = element_text(size=24),
+      axis.text = element_text(size=18),
+      axis.title = element_text(size=25))
 }
 
 {

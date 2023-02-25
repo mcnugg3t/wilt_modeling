@@ -3,14 +3,19 @@ require(crayon)
 #'
 #'
 #'
-generate_densities_ <- function(ow.ppp, bw.v, verbose=T) {
+generate_densities_ <- function(ow.ppp, bw.v, grd.int, verbose=T) {
   if(verbose) cat(crayon::bgGreen("\n\nFUNCT : generate_densities_ ...\n") )
   if(verbose) cat(paste0("\n\tbw.v : " , paste0(bw.v, collapse= " , ")))
   density.computed = list.files("clean_data/density/")
   for(i in seq_along(bw.v)) { # loop over 
     bw.tmp <- bw.v[i] # extract bw val
     
-    save.name.sml = paste0("dens_bw_", round(bw.tmp, 0), ".Rds")
+    if(grd.int == 30) {
+      save.name.sml = paste0("g30_dens_bw_", round(bw.tmp, 0), ".Rds")
+    } else {
+      save.name.sml = paste0("dens_bw_", round(bw.tmp, 0), ".Rds")
+    }
+    
     # if bw already computed, next
     if(save.name.sml %in% density.computed) next
     save.name.tmp = paste0("clean_data/density/", save.name.sml)

@@ -290,21 +290,27 @@
   gc()
   source("functions/define_study_area_.R")
   {
-    define_study_area_(grd.int = 10, wilt.buffer.dist = 1200, oak.buffer.dist=50, verbose=T, DBG=T) 
+    define_study_area_(grd.int = 10, wilt.buffer.dist = 800, oak.buffer.dist=50, verbose=T, DBG=T) 
+    sa.10 <- terra::rast("mid_data/10/study_area/sa_base.tif")
+    sa.10 |> names()
+    sa.10 |> plot()
     # n.cells go 1.8 mil -> 1.2 mil -> 1 mil
-    define_study_area_(grd.int = 30, wilt.buffer.dist = 1200, oak.buffer.dist=50, verbose=T, DBG=T)
+    define_study_area_(grd.int = 30, wilt.buffer.dist = 800, oak.buffer.dist=50, verbose=T, DBG=T)
+    sa.30 <- terra::rast("mid_data/30/study_area/sa_base.tif")
+    sa.30 |> names()
+    sa.30 |> plot()
     # n.cells go 200k -> 147k -> 121k
   }
   
   {
     source("functions/join_data_.R")
     joindat.10 <- join_data_(grd.int=10)
-    writeRaster(joindat.10, filename="clean_data/joindat_10_1200.tif", overwrite=T)
+    writeRaster(joindat.10, filename="clean_data/joindat_10_800_50.tif", overwrite=T) 
     cat(crayon::bgRed("\n\nDONE JOINING 10m x 10m data"))
     rm(joindat.10)
     gc()
     joindat.30 <- join_data_(grd.int=30)
-    writeRaster(joindat.30, filename="clean_data/joindat_30_1200.tif", overwrite=T)
+    writeRaster(joindat.30, filename="clean_data/joindat_30_800_50.tif", overwrite=T)
     cat(crayon::bgRed("\n\nDONE JOINING 30m x 30m data"))
   }
   

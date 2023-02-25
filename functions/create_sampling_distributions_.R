@@ -19,31 +19,40 @@ source("functions/mask_density_.R")
 # }
 #' takes covariate raster and nsim, loops over all KDEs, draws n.sim points with replacement, computes sampling distribution saves
 #' also takes (optional) join.dat := single dataframe to join with the data extracted from covar.rast
-#' and interact.v := vector of interactions to calculate
+#' and inter.v := vector of interactions to calculate
 create_sampling_distributions_ <- function(covar.rast, join.dat, n.sim, 
-                                           interact.v, rm.vars,
-                                           interact=T, n.breaks=100, 
+                                           inter.v, rm.vars,
+                                           interact=T, n.breaks=100, grd.int,
                                            verbose=T, DBG=F) {
   # setup
   if(verbose) cat( crayon::bgGreen("\n\nFUNCT : sample_kdes_") ) # print
-  pth.tmp <- paste0("clean_data/density/") # path
+  pth.tmp <- paste0("clean_data/density/", grd.int, "/") # path
   kdes.tmp <- list.files( pth.tmp ) # list density files
-  dens.complete <- list.files( "clean_data/sample_dist/"  ) # list already computed
+  dens.complete <- list.files( paste0("clean_data/sample_dist/", grd.int, "/")  ) # list already computed
   
   ##
   ## LOOP OVER KDEs
   for(j in seq_along(kdes.tmp)) {
+      if(kdes.tmp[j] == "fine") next
       cat(paste0("\n\n\tj = ", j)) # print
       
       { # construct paths & print
         fn.tmp <- kdes.tmp[j]
         fl.pth <- paste0(pth.tmp, fn.tmp)
-        bw.tmp <- fn.tmp |> 
-          str_remove("dens_bw_") |> 
-          str_remove(".Rds") |> 
-          as.numeric()
+        
+        if(grd.int == 10) {
+          bw.tmp <- fn.tmp |> 
+            str_remove("dens_bw_") |> 
+            str_remove(".Rds") |> 
+            as.numeric()
+        } else {
+          bw.tmp <- fn.tmp |> 
+            str_remove("g30_dens_bw_") |> 
+            str_remove(".Rds") |> 
+            as.numeric()
+        }
         save.short <- paste0("samp_dist_bw_", bw.tmp, ".Rds")
-        save.pth <- paste0("clean_data/sample_dist/", save.short )
+        save.pth <- paste0("clean_data/sample_dist/", grd.int, "/", save.short )
         if(save.short %in% dens.complete) {
           cat("\n\t\t\t\t"); cat(crayon::bgYellow("ALREADY COMPUTED")); 
           next
@@ -91,8 +100,18 @@ create_sampling_distributions_ <- function(covar.rast, join.dat, n.sim,
         if(DBG) cat("\n\t\textracting...")
         extr.res <- terra::extract(covar.rast, ind.extr)
         if(DBG) cat("\n\t\tmerging...")
-        extr.res.full <- cbind(ind.unique, extr.res) |> 
-          select(-ow_rast_10, -index, -x, -y, -`study area`) 
+        
+        if(grd.int == 10) {
+          extr.res.full <- cbind(ind.unique, extr.res) |> 
+            select(-ow_rast_10, -index, -x, -y, -`study area`)
+        } else if (grd.int == 30) {
+          extr.res.full <- cbind(ind.unique, extr.res) |> 
+            select(-ow_rast_30, -index, -x, -y, -`study area`)
+        } else {
+          cat(crayon::red("SHOULDN'T REACH"))
+          break
+        }
+         
         # join data
         extr.join <- extr.res.full |> 
           left_join(join.dat) |> 
@@ -106,7 +125,7 @@ create_sampling_distributions_ <- function(covar.rast, join.dat, n.sim,
       ## ADD INTERACTIONS
       if(interact) {
         if(verbose) cat(crayon::bgCyan("\n\t\tINTERACTING..."))
-        extr.join <- add_interact_(extr.join, interact.v, F, F)
+        extr.join <- add_interact_(extr.join, inter.v, F, F)
       }
       
       

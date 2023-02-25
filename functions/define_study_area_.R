@@ -53,10 +53,12 @@ define_study_area_ <- function(grd.int, wilt.buffer.dist, oak.buffer.dist, verbo
                   NA,
                   manage.rast)
   mask.ow.buff.3 <- mask(mask.ow.buff.2, cnnf.mask)
-
+  if(DBG) cat( paste0("\n\t\tcurrent count cells with values = ", sum(!is.na(values(mask.ow.buff.3)))) )
   if(grd.int == 10) {
+    names(mask.ow.buff.3) <- "study area"
     terra::writeRaster(mask.ow.buff.3, filename="mid_data/10/study_area/sa_base.tif", overwrite=T)
   } else {
+    names(mask.ow.buff.3) <- "study area"
     terra::writeRaster(mask.ow.buff.3, filename="mid_data/30/study_area/sa_base.tif", overwrite=T)
   }
   
