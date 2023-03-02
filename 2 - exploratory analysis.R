@@ -156,28 +156,6 @@
   }
 }
 
-##
-# { ##### 3 - from each density, create a list of point patterns ###### 
-#   #
-#   { # prep
-#     rm(list=ls())
-#     gc()
-#     source("functions/create_ppps_.R")
-#   }
-#   create_ppps_(n.sim=100, verbose=T, DBG=T)
-# }
-##
-# { ##### 4 - simulation envelope for L under varying bw values ########### 
-#   { # setup
-#     rm(list=ls())
-#     gc()
-#     dens.files <- list.files("clean_data/sample/")
-#     ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
-#     source("functions/simulation_envelopes_L_.R")
-#   }
-#   simulation_envelopes_L_(dens.files, ow.ppp, verbose=T, DBG=T)
-# }
-##
 { ####### 5 - Fry plot locally + globally ########
   
 }
@@ -301,79 +279,104 @@
   { ## PLOT SUPRISAL
     {
       plot.dat <- readRDS("clean_data/plot/information_plot_dat_10.Rds") 
-      max.noninf.surp <- max(plot.dat$surprisal[!is.infinite(plot.dat$surprisal)], na.rm=T); max.noninf.surp
+      max.finite.surp <- max(plot.dat$surprisal[!is.infinite(plot.dat$surprisal)], na.rm=T); max.finite.surp
       plot.dat <- plot.dat |> 
         mutate(surprisal = if_else(
                               condition = is.infinite(surprisal), 
-                              true = max.noninf.surp + runif(n=1, min=0, max=4),
+                              true = max.finite.surp + runif(n=1, min=0, max=4),
                               false = surprisal))
     }
     {
       plot.dat.30 <- readRDS("clean_data/plot/information_plot_dat_30.Rds") 
-      max.noninf.surp.30 <- max(plot.dat.30$surprisal[!is.infinite(plot.dat.30$surprisal)], na.rm=T); max.noninf.surp.30
+      max.finite.surp.30 <- max(plot.dat.30$surprisal[!is.infinite(plot.dat.30$surprisal)], na.rm=T); max.finite.surp.30
       plot.dat.30 <- plot.dat.30 |> 
-        mutate(surprisal = if_else(is.infinite(surprisal), max(surprisal)+runif(n=1, min=0, max=4), surprisal))
+        mutate(surprisal = if_else(
+          condition = is.infinite(surprisal), 
+          true = max.finite.surp.30 + runif(n=1, min=0, max=4),
+          false = surprisal))
     }
     
     {
       # remove all interactions except top 10
-      var.unique <- plot.dat$var |> 
-        unique()
-      int.ind <- var.unique |>   
-        str_detect(" x ")
-      int.vars <- var.unique[int.ind]; int.vars
-      nonint.vars <- var.unique[!int.ind]; nonint.vars
-      top.10.interact <- plot.dat |> 
-        filter(var %in% int.vars) |> 
-        group_by(var) |> 
-        summarise(med_ic = median(surprisal, na.rm=T)) |> 
-        arrange(desc(med_ic)) |> 
-        select(var) |> 
-        slice(1:10) |> 
-        pull(var)
-      p1.dat <- plot.dat |> 
-        filter(var %in% nonint.vars | var %in% top.10.interact) |> 
-        filter(!(var %in% c("SLOPE_CLAS", "SOIL_NAME", "EROSION_DI")))
+      
+      # filter to all vars and top 10 interaction terms (using median ic)
+      filter_topN_interacts_ <- function(dat.in, n.top) {
+        var.unique <- dat.in$var |> # unique variables
+          unique()
+        int.ind <- var.unique |>   # indices of those variables with interact _ x _
+          str_detect(" x ")
+        interact.vars <- var.unique[int.ind]; interact.vars # subset interact terms
+        noninteract.vars <- var.unique[!int.ind]; noninteract.vars # and non-interact terms
+        top.n.interact <- dat.in |> # get var names for top 10 interact terms
+          filter(var %in% interact.vars) |> 
+          group_by(var) |> 
+          summarise(med_ic = median(surprisal, na.rm=T)) |> 
+          arrange(desc(med_ic)) |> 
+          select(var) |> 
+          slice(1:n.top) |> 
+          pull(var)
+        return.dat <- dat.in |> # filter - either a plain covariate or one of the top 10 interaction terms
+          filter(var %in% noninteract.vars | var %in% top.n.interact) |> 
+          filter(!(var %in% c("SLOPE_CLAS", "SOIL_NAME", "EROSION_DI")))
+        return(return.dat)
+      }
+      p1.dat <- filter_topN_interacts_(plot.dat, 20)
+      p2.dat <- filter_topN_interacts_(plot.dat.30, 20)
+      
       median.ic.val <- median(p1.dat$surprisal, na.rm=T)
       p1.dat |> 
         group_by(as.factor(bw), var) |> 
         ggplot(aes(y=surprisal, group=bw, fill=bw)) +
-        geom_boxplot() + facet_wrap(~var) + geom_hline(yintercept=median.ic.val, color="red")
+          geom_boxplot() + 
+          facet_wrap(~var) + 
+          geom_hline(yintercept=median.ic.val, color="red")
+      
+      median.ic.val <- median(p2.dat$surprisal, na.rm=T)
+      p2.dat |> 
+        group_by(as.factor(bw), var) |> 
+        ggplot(aes(y=surprisal, group=bw, fill=bw)) +
+          geom_boxplot() + 
+          facet_wrap(~var) + 
+          geom_hline(yintercept=median.ic.val, color="red")
+      
+      vis_1var_ <- function(in.dat, in.var) {
+        return <- in.dat |> 
+          filter(var == in.var) |> 
+          group_by(as.factor(bw)) |> 
+          ggplot(aes(y=surprisal, group=bw, fill=bw)) +
+          geom_boxplot() + geom_hline(yintercept=median.ic.val, color="red")
+      }
+      
+      vis_1var_(p1.dat, "slope") |> plot()
+      vis_1var_(p1.dat, "channel_dist_s7") |> plot()
+      vis_1var_(p1.dat, "gw_10") |> plot()
+      
+      vis_1var_(p2.dat, "clay") |> plot() # yes
+      vis_1var_(p2.dat, "gw_30") |> plot() # yes/maybe
+      vis_1var_(p2.dat, "rsp") |> plot() # yes
+      vis_1var_(p2.dat, "val_dep") |> plot() # yes/maybe - more at higher BW
+      vis_1var_(p2.dat, "wl2_oakprob_30") |> plot() # yes
     }
     
     
-    var.unique <- plot.dat$var |> 
-      unique()
-    int.ind <- var.unique |>   
-      str_detect(" x ")
-    int.vars <- var.unique[int.ind]; int.vars
-    nonint.vars <- var.unique[!int.ind]; nonint.vars
-    top.10.interact.30 <- plot.dat.30 |> 
+    p1.dat.smry <- p1.dat |> 
       group_by(var) |> 
-      summarise(med_ic = median(surprisal, na.rm=T)) |> 
-      arrange(desc(med_ic)) |> 
-      select(var) |> 
-      slice(1:10) |> 
-      pull(var)
+      summarise(sd.ic = sd(surprisal, na.rm=T),
+                med.ic = median(surprisal, na.rm=T))
     
+    p2.dat.smry <- p2.dat |> 
+      group_by(var) |> 
+      summarise(sd.ic = sd(surprisal, na.rm=T),
+                med.ic = median(surprisal, na.rm=T))
     
-    
-    p1.dat.30 <- plot.dat.30 |> 
-      filter(var %in% top.10.interact.30)
-    
-    p1.dat |> 
-      group_by(as.factor(bw), var) |> 
-      ggplot(aes(y=surprisal, group=bw, fill=bw)) +
-      geom_boxplot() + facet_wrap(~var)
-    
-    p1.dat |> 
+    p1.dat.smry |> 
       ggplot(aes(x=sd.ic, y=med.ic, color=var)) +
         geom_label(aes(label=var), size=5) +
         labs(title = "Variable Information Content: Median vs SD", x="Standard deviation of information content", y="Median information content") +
         theme(plot.title=element_text(size=30),
               axis.title = element_text(size=20))
     
-    p1.dat.30 |> 
+    p2.dat.smry |> 
       ggplot(aes(x=sd.ic, y=med.ic, color=var)) +
       geom_label(aes(label=var), size=5) +
       labs(title = "Variable Information Content: Median vs SD", x="Standard deviation of information content", y="Median information content") +
@@ -399,3 +402,29 @@
   }
 }
 
+
+
+
+
+##
+# { ##### 3 - from each density, create a list of point patterns ###### 
+#   #
+#   { # prep
+#     rm(list=ls())
+#     gc()
+#     source("functions/create_ppps_.R")
+#   }
+#   create_ppps_(n.sim=100, verbose=T, DBG=T)
+# }
+##
+# { ##### 4 - simulation envelope for L under varying bw values ########### 
+#   { # setup
+#     rm(list=ls())
+#     gc()
+#     dens.files <- list.files("clean_data/sample/")
+#     ow.ppp <- readRDS("clean_data/ow_ppp_10.Rds")
+#     source("functions/simulation_envelopes_L_.R")
+#   }
+#   simulation_envelopes_L_(dens.files, ow.ppp, verbose=T, DBG=T)
+# }
+##
