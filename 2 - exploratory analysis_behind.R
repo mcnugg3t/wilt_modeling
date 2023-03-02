@@ -403,6 +403,7 @@
 }
 
 
+<<<<<<< HEAD:2 - exploratory analysis_behind.R
 
 
 
@@ -428,3 +429,5 @@
 #   simulation_envelopes_L_(dens.files, ow.ppp, verbose=T, DBG=T)
 # }
 ##
+=======
+>>>>>>> cc7564fe77238266a7874ee22a26cb22b2c51a2c:2 - exploratory analysis.R
