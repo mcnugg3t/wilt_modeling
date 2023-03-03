@@ -193,3 +193,14 @@
   }
   tst.gam |> plot()
 }
+
+
+
+{ ############ visualize model results
+  tst.mod <- readRDS("model_data/models/gam_30_freml.Rds") # load model
+  tst.mod$fitted.values # fitted
+  # load input data
+  # load ow pts
+  # plot
+  
+}
