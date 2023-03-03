@@ -134,6 +134,7 @@
         plot(fig)
         prpt = readline(prompt="\nany key for next...")
       }
+      
       save.dat <- var.subs |> 
         add_column(y = dat.intr.10[["y"]], .after="ow_rast_10") |> 
         add_column(x = dat.intr.10[["x"]], .after="ow_rast_10")
@@ -148,14 +149,26 @@
       names(dat.10)
       names(dat.10)[c(5:7, 11:12)] <- names(dat.10)[c(5:7, 11:12)] |> str_replace_all(pattern=" ", replacement="_")
       names(dat.10)
-      mod.tst <- bam(
-        ow_rast_10 ~ s(x, y) + aspect + bd_x_conv_ind + bd_x_hillshade + bd_x_ph + 
-                        channel_dist_s7 + clay + elev + hillshade_x_prof_curv + ph_x_topo_wet + 
-                        plan_curv + val_depth + wl2_oakprob_10,
-                    data = dat.10,
-                    family=poisson(link="log"), method="fREML", nthreads=6
-                     )
-      summary(mod.tst)
+      dat.10 |> str()
+      for(i in 2:ncol(dat.10)) {
+        dat.10[,i] <- scale(dat.10[,i])
+      }
+      dat.10 |> str()
+      {
+        t1 <- Sys.time()
+        mod.tst <- bam(
+          ow_rast_10 ~ s(x, y) + s(bd_x_conv_ind, bs="cs") + s(bd_x_hillshade, bs="cs") + 
+                          s(channel_dist_s7, bs="cs") + s(elev, bs="cs") + s(val_depth, bs="cs") + s(wl2_oakprob_10, bs="cs"),
+                      data = dat.10,
+                      family=poisson(link="log"), method="fREML", nthreads=6,
+                      #coef=coef.last
+                       )
+        coef.last <- mod.tst$coefficients
+        t2 <- Sys.time()
+        cat(paste0("\ndifftime = ", difftime(t2, t1, units="mins"), " min"))
+        summary(mod.tst)
+        plot(mod.tst)
+      }
     }
 }
   
