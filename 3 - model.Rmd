@@ -6,7 +6,7 @@ output: html_document
 
 ### Setup
 
-**Please fill in "this.wd" variable below with the path to your local folder "wilt"** then all chunks should be able to run without further changes
+**Fill in "this.wd" variable below with the path to your local folder "wilt"** then all chunks should be able to run without further changes
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)

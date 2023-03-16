@@ -1,4 +1,4 @@
-{ ###### INIT #####
+{ ###### PKG #####
   rm(list=ls())
   gc()
   library(spatstat)
@@ -98,7 +98,7 @@
   }
 }
 
-{ ####### Identify covarying predictors ########
+{ ####### Identify covarying predictors and plot response vs candidate covars ########
     dat.intr.30 <- readRDS("mod_data/full_dat/dat_interact_30.Rds")
     dat.intr.10 <- readRDS("mod_data/full_dat/dat_interact_10.Rds")
     source("functions/mod/pear_corr_.R")
@@ -109,8 +109,7 @@
     dat.intr.30 |> 
       select(-x, -y, -ow_rast_30) |> 
       pear_corr_()
-    
-    vars.filt.10 <- readRDS("mod_data/full_dat/view_vars_10.Rds")
+    #vars.filt.10 <- readRDS("mod_data/full_dat/view_vars_10.Rds")
     
     compare.list.30 <- list(
       c("conv_ind x prof_curv", "plan_curv x prof_curv", "ph x prof_curv", "bd x prof_curv", "prof_curv"), # 1
@@ -140,42 +139,43 @@
     )
     
     # for each comparison, plot covar quintiles (left) and deciles (right) vs disease rate 
-    for(i in seq_along(compare.list.30)) {
-      vars.extr <- compare.list.30[[i]]
+    for(i in seq_along(compare.list.10)) {
+      vars.extr <- compare.list.10[[i]]
       cat(paste0("\ni = ", i, "\tvar.tmp = ", paste0(vars.extr, collapse=" , ")))
-      dir.create(paste0("expl_data/var_compare/30/", i))
+      dir.create(paste0("expl_data/var_compare/10/", i))
       for(j in seq_along(vars.extr)) {
           var.tmp <- vars.extr[j]
-          plot.dat <- dat.intr.30 |> 
-            select( "ow_rast_30", all_of(var.tmp) ) |> 
+          plot.dat <- dat.intr.10 |> 
+            select( "ow_rast_10", all_of(var.tmp) ) |> 
             drop_na() |> 
             mutate(quintile = ntile(!!sym(var.tmp), n=5),
                    decile = ntile(!!sym(var.tmp), n=10))
           left.plot <- plot.dat |> 
             group_by(quintile) |> 
-            summarise(ow_rate = sum(ow_rast_30)/n() ) |> 
+            summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
             ggplot(aes(x=quintile, y=ow_rate, fill=ow_rate)) + geom_col()
           right.plot <- plot.dat |> 
             group_by(decile) |> 
-            summarise(ow_rate = sum(ow_rast_30)/n() ) |> 
+            summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
             ggplot(aes(x=decile, y=ow_rate, fill=ow_rate)) + geom_col()
           fig <- ggarrange(left.plot, right.plot, labels=c(paste0(var.tmp, " quintile"), paste0(var.tmp, " decile")))
-          jpeg(filename=paste0("expl_data/var_compare/30/", i, "/", j, ".jpg"))
+          jpeg(filename=paste0("expl_data/var_compare/10/", i, "/", j, ".jpg"))
           plot(fig)
           dev.off()
       }
     }
 }
 
-{ ###### PICK COVARS to keep #######
-    { ####### 30-m data, check cond_ind after removal ######
-      source('functions/mod/pear_corr_.R')
-      source("functions/mod/condition_index_.R")
-      
+{ ###### Select predictors to keep #######
+  source('functions/mod/pear_corr_.R')
+  source("functions/mod/condition_index_.R")
+  source("functions/mod/var_vs_response_.R")
+  
+    { ####### Select predictors for 30-m data, check cond_ind after removal ######
       names(dat.intr.30)
       var.subs.30 <- dat.intr.30 |>
         select(ow_rast_30,
-               wl2_oakprob_30, val_dep, elev, aspect, # removed gw_30, slope, clay,
+               wl2_oakprob_30, elev, aspect, # removed val_dep, gw_30, slope, clay,
                `bd x prof_curv`, # 1
                `bd x conv_ind`, # 2
                `channel_net_s5`, #`channel_net_s7`, # 3
@@ -190,83 +190,44 @@
         select(-ow_rast_30) |> 
         condition_index_())
       
-      for(i in seq_len(ncol(var.subs))) {
-        if(i == 1) next
-        var.tmp <- colnames(var.subs)[i]
-        cat(paste0("\ni = ", i, "\tvar.tmp = ", var.tmp))
-        plot.dat <- var.subs |> 
-          select( "ow_rast_10", all_of(var.tmp) ) |> 
-          drop_na() |> 
-          mutate(quintile = ntile(!!sym(var.tmp), n=5),
-                 decile = ntile(!!sym(var.tmp), n=10))
-        left.plot <- plot.dat |> 
-          group_by(quintile) |> 
-          summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
-          ggplot(aes(x=quintile, y=ow_rate, fill=ow_rate)) + geom_col()
-        right.plot <- plot.dat |> 
-          group_by(decile) |> 
-          summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
-          ggplot(aes(x=decile, y=ow_rate, fill=ow_rate)) + geom_col()
-        
-        fig <- ggarrange(left.plot, right.plot, labels=c(paste0(var.tmp, " quintile"), paste0(var.tmp, " decile")))
-        plot(fig)
-        prpt = readline(prompt="\nany key for next...")
-      }
+      mod.dat.30 <- var.subs.30 |> 
+        add_column(y = dat.intr.30[["y"]], .after="ow_rast_30") |> 
+        add_column(x = dat.intr.30[["x"]], .after="ow_rast_30")
       
-      save.dat <- var.subs |> 
-        add_column(y = dat.intr.10[["y"]], .after="ow_rast_10") |> 
-        add_column(x = dat.intr.10[["x"]], .after="ow_rast_10")
-      saveRDS(save.dat, file="mod_data/model_in/dat_10.Rds")
+      saveRDS(mod.dat.30, file="mod_data/model_in/dat_30.Rds")
     }
     
-    { ####### 10-m data, check cond_ind after removal, vis all ######
+    { ####### Select predictors for 10-m data, check cond_ind after removal, vis all ######
       names(dat.intr.10)
       var.subs.10 <- dat.intr.10 |>  #**important*
-        select(-x, -y,
-               -hillshade, # 1
-               -prof_curv, -`conv_ind x prof_curv`, -`plan_curv x prof_curv`, -`ph x prof_curv`, # 2
-               -`ph x rsp`, -`rsp`, -channel_dist_s5, # 3
-               -topo_wet,# 4
-               -`ph x sand`, -`bd x sand`, -sand, -`sand x conv_ind`, -`sand x plan_curv`,# 5
-               -`sand x plan_curv`,# 6
-               -`bd x plan_curv`,# 7
-               -`ph x conv_ind`, -`ph x plan_curv`,# 8
-               -`ph x wl2_oakprob_10`,# 9
-               -gw_10, -`ph x hillshade`, -`bd x prof_curv`, -`sand x prof_curv`, -slope# extra
-                )
-      var.subs |> pear_corr_()
-      source("functions/mod/condition_index_.R")
-      var.subs |> 
+        select(ow_rast_10,
+               elev, aspect, slope, channel_dist_s5, wl2_oakprob_10, plan_curv, val_depth, # removed sand, rsp, channel_dist_s7, ph x rsp, val_depth
+               `bd x hillshade`, # 1
+               `bd x prof_curv`, # 2
+               # 3 is channel_dist_s5
+               `ph x topo_wet`, # 4
+               `ph x sand`, # 5
+               #`sand x conv_ind`, #**non-linear* 6 
+               `bd x conv_ind`, # 7
+               `bd x ph`, #**nonlin* # 8 
+              )
+      var.subs.10 |> pear_corr_()
+      
+      (var.subs.10 |> 
         select(-ow_rast_10) |> 
-        condition_index_(); ci.val
-        
-      for(i in seq_len(ncol(var.subs))) {
-        if(i == 1) next
-        var.tmp <- colnames(var.subs)[i]
-        cat(paste0("\ni = ", i, "\tvar.tmp = ", var.tmp))
-        plot.dat <- var.subs |> 
-            select( "ow_rast_10", all_of(var.tmp) ) |> 
-            drop_na() |> 
-            mutate(quintile = ntile(!!sym(var.tmp), n=5),
-                   decile = ntile(!!sym(var.tmp), n=10))
-        left.plot <- plot.dat |> 
-            group_by(quintile) |> 
-            summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
-            ggplot(aes(x=quintile, y=ow_rate, fill=ow_rate)) + geom_col()
-        right.plot <- plot.dat |> 
-            group_by(decile) |> 
-            summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
-            ggplot(aes(x=decile, y=ow_rate, fill=ow_rate)) + geom_col()
-        
-        fig <- ggarrange(left.plot, right.plot, labels=c(paste0(var.tmp, " quintile"), paste0(var.tmp, " decile")))
-        plot(fig)
-        prpt = readline(prompt="\nany key for next...")
+        condition_index_())
+      
+      { #### plot comparison ###
+        p1 = var_vs_response_(var.subs.10, "ow_rast_10", "ph x topo_wet")
+        p1
+        p2 = var_vs_response_(var.subs.10, "ow_rast_10", "slope")
+        p2
       }
       
-      save.dat <- var.subs |> 
+      mod.dat.10 <- var.subs.10 |> 
         add_column(y = dat.intr.10[["y"]], .after="ow_rast_10") |> 
         add_column(x = dat.intr.10[["x"]], .after="ow_rast_10")
-      saveRDS(save.dat, file="mod_data/model_in/dat_10.Rds")
+      saveRDS(mod.dat.10, file="mod_data/model_in/dat_10.Rds")
   }
 }
   
@@ -316,68 +277,212 @@
   rm(list=ls())
   gc()
   library(mgcv)
-  dat.mod.30 <- readRDS("model_data/var8_30_moddat.Rds")
-  dat.mod.30 |> str()
-  names(dat.mod.30)[8:11] <- c("bd_x_prof_curv", "bd_x_plan_curv", "bd_x_hillshade", "ph_x_sand")
+  dat.mod.30 <- readRDS("mod_data/model_in/dat_30.Rds")
+  
+  {
+    dat.mod.30 |> str()
+    ind.tmp = stringr::str_detect(names(dat.mod.30), pattern=" x ") |> 
+      which(); ind.tmp
+    names(dat.mod.30)[ind.tmp] <- names(dat.mod.30)[ind.tmp] |> 
+      stringr::str_replace_all(pattern=" x ", replacement="_x_")
+    str(dat.mod.30)
+  }
+  
   for(i in seq_len(ncol(dat.mod.30))) {
-    if(i >= 2) {
+    if(i >= 4) {
       dat.mod.30[,i] <- scale(dat.mod.30[,i])
     }
   }
-  dat.mod.30 |> str()
+  dat.mod.30 |> names()
   {
     t1 <- Sys.time()
     tst.gam <- mgcv::bam(ow_rast_30 ~ 
-                           s(x, y) + aspect + s(val_dep, bs="cs") + s(wl2_oakprob_30, bs="cs") + s(bd_x_prof_curv, bs="cs") + s(bd_x_plan_curv, bs="cs") + 
-                           s(bd_x_hillshade, bs="cs") + s(ph_x_sand, bs="cs"),
+                           s(x, y) + 
+                           s(wl2_oakprob_30, bs="cs") + 
+                           # s(elev, aspect, bs=c("ps", "cc") ) + 
+                           s(elev, bs="cs") +
+                           s(channel_net_s5, bs="cs") + s(bd_x_prof_curv, bs="cs"),
+                           #s(topo_wetness, bs="cs") + s(conv_ind_x_hillshade, bs="cs") + #,
+                           # bd_x_prof_curv + bd_x_conv_ind + conv_ind_x_hillshade + ph_x_sand,
+                           # s(bd_x_prof_curv, bs="cs") + s(bd_x_conv_ind, bs="cs") + 
+                           # s(conv_ind_x_hillshade, bs="cs") + s(ph_x_sand, bs="cs"),
                        data=dat.mod.30, family=poisson(link="log"), method="fREML", nthreads=6)
     t2 <- Sys.time()
     cat(paste0("\ntime = ", difftime(t2, t1, units="mins"), " min"))
     cat(paste0("\nAIC = ", AIC(tst.gam)))
     #saveRDS(tst.gam, file="model_data/models/gam_30_freml.Rds")
-    tst.gam |> summary()
   }
+  tst.gam |> summary()
   tst.gam |> plot()
+  library(mgcViz)
+  b = getViz(tst.gam)
+  plot( sm(b, 1) )
+  plot( sm(b, 2) )
+  plot( sm(b, 3) )
+  plot( sm(b, 4) )
 }
 
 { ###### 10-m GAM #########
   rm(list=ls())
   gc()
   library(mgcv)
-  dat.mod.10 <- readRDS("model_data/var12_10_moddat.Rds")
-  dat.mod.10 |> str()
-  names(dat.mod.10)[7:14] <- c("ph_x_topo_wet", "ph_x_rsp", "ph_x_wl2_oakprob_10", "bd_x_sand",
-                               "bd_x_ph", "bd_x_hillshade", "bd_x_plan_curv", "conv_ind_x_prof_curv")
+  
+  { ###### replace variable names with spaces with underscores ######
+    dat.mod.10 <- readRDS("model_data/var12_10_moddat.Rds")
+    dat.mod.10 |> str()
+    ind.tmp = stringr::str_detect(names(dat.mod.10), pattern=" x ") |> 
+      which(); ind.tmp
+    names(dat.mod.10)[ind.tmp] <- names(dat.mod.10)[ind.tmp] |> 
+      stringr::str_replace_all(pattern=" x ", replacement="_x_")
+    dat.mod.10 |> names()
+  }
+  # scale
   for(i in seq_len(ncol(dat.mod.10))) {
     if(i >= 2) {
       dat.mod.10[,i] <- scale(dat.mod.10[,i])
     }
   }
-  dat.mod.10 |> str()
-  {
+  #dat.mod.10 |> str()
+  
+  { ###### fit gam ######
     t1 <- Sys.time()
     tst.gam <- mgcv::bam(ow_rast_10 ~ 
-                           s(x, y) + aspect + s(elev, bs="cs") + s(ph_x_wl2_oakprob_10, bs="cs") + s(bd_x_hillshade, bs="cs") +
-                           s(bd_x_hillshade, bs="cs") + s(bd_x_plan_curv, bs="cs"),
-                           #s(bd_x_prof_curv, bs="cs") + s(bd_x_plan_curv, bs="cs") + 
-                           #s(bd_x_hillshade, bs="cs") + ,
+                           s(x, y) + s(wl2_oakprob_10, bs="cs") + s(elev, bs="cs") + s(aspect, bs="cc") +
+                           # te(elev, aspect, bs=c("ps", "cc")) +
+                           s(ph_x_wl2_oakprob_10, bs="cs") + s(bd_x_hillshade, bs="cs") + s(bd_x_plan_curv, bs="cs"),
+                           #ph_x_topo_wet + ph_x_rsp + ph_x_wl2_oakprob_10 + bd_x_sand + bd_x_ph + bd_x_hillshade + bd_x_plan_curv + conv_ind_x_prof_curv,
                          data=dat.mod.10, family=poisson(link="log"), method="fREML", nthreads=6)
     t2 <- Sys.time()
     cat(paste0("\ntime = ", difftime(t2, t1, units="mins"), " min"))
     cat(paste0("\nAIC = ", AIC(tst.gam)))
-    saveRDS(tst.gam, file="model_data/models/gam_10_freml.Rds")
-    tst.gam |> summary()
   }
-  tst.gam |> plot()
+  { ###### visualize ######
+    tst.gam |> summary()
+    #tst.gam |> plot()
+    library(mgcViz)
+    b = getViz(tst.gam)
+    plotRGL( sm(b, 1) )
+    plot( sm(b, 2) )
+    plotRGL( sm(b, 3), residuals=T )
+    plot( sm(b, 4) )
+  }
 }
 
-
-
-{ ############ visualize model results
-  tst.mod <- readRDS("model_data/models/gam_30_freml.Rds") # load model
-  tst.mod$fitted.values # fitted
-  # load input data
-  # load ow pts
-  # plot
+{ ######### Get CPM data ready ###########
+  rm(list=ls())
+  gc()
   
+  { ####### create quadschemes ########
+    ow.ppp.10 = readRDS("clean_data/ow_ppp_10.Rds")
+    ow.ppp.30 = readRDS("clean_data/ow_ppp_30.Rds")
+    quads.10 = quadscheme(data=ow.ppp.10, method="grid", eps=30)
+    quads.10
+    saveRDS(quads.10, file="mod_data/kppm/quad_10_30.Rds")
+    
+    quads.30 = quadscheme(data=ow.ppp.30, method="grid", eps=30)
+    quads.30
+    saveRDS(quads.30, file="mod_data/kppm/quad_30_30.Rds")
+    
+  }
+  
+  { ####### create im lists ########
+    source("functions/mod/tbl_to_im_.R")
+    
+    dat.mod.30 <- readRDS("mod_data/model_in/dat_30.Rds")
+    vars.in = names(dat.mod.30)[4:ncol(dat.mod.30)]; vars.in
+    
+    im.list.30 = tbl_to_im_(
+      dat.mod.30, 
+      vars.in, 
+      terra::crs('EPSG:3071'),
+      verbose=T, DBG=T)
+    saveRDS(im.list.30, file="mod_data/kppm/im_list_30.Rds")
+    
+    dat.mod.10 <- readRDS("mod_data/model_in/dat_10.Rds")
+    vars.in = names(dat.mod.10)[4:ncol(dat.mod.10)]; vars.in
+    im.list.10 = tbl_to_im_(
+      dat.mod.10,
+      vars.in, 
+      terra::crs('EPSG:3071'),
+      verbose=T, DBG=T)
+    saveRDS(im.list.10, file="mod_data/kppm/im_list_10.Rds")
+  }
+}
+
+{ #######  Fit 30-m KPPM #########
+  quads.30 = readRDS("mod_data/kppm/quad_30_30.Rds")
+  im.list.30 = readRDS("mod_data/kppm/im_list_30.Rds"); names(im.list.30)
+  {
+    kppm.30.thom = kppm(
+      X = quads.30, 
+      trend = ~.,
+      clusters="Thomas",
+      penalised = T,
+      data=im.list.30,
+      subset=ow.ppp.30$window,
+      method = "palm",
+      improve.type = "quasi")
+    
+    kppm.30.mat = kppm(
+      X = quads.30, 
+      trend = ~.,
+      clusters="MatClust",
+      penalised = T,
+      data=im.list.30,
+      subset=ow.ppp.30$window,
+      method = "palm",
+      improve.type = "quasi")
+    
+    kppm.30.cauch = kppm(
+      X = quads.30, 
+      trend = ~.,
+      clusters="Cauchy",
+      penalised = T,
+      data=im.list.30,
+      subset=ow.ppp.30$window,
+      method = "palm",
+      improve.type = "quasi")
+    
+    kppm.30.vargam = kppm(
+      X = quads.30, 
+      trend = ~.,
+      clusters="VarGamma",
+      penalised = T,
+      data=im.list.30,
+      subset=ow.ppp.30$window,
+      method = "palm",
+      improve.type = "quasi")
+    
+    kppm.30
+    kppm.30 |> plot()
+  }
+}
+
+{ ####### Fit 10-m KPPM #########
+  
+  im.list.10 = readRDS("mod_data/kppm/im_list_10.Rds"); names(im.list.10)
+  {
+    kppm.10.full = kppm(
+      X = ow.ppp.10, 
+      trend = ~.,
+      clusters="Thomas",
+      data=im.list.10,
+      rmax=1000,
+      method = "palm",
+      improve.type = "quasi")
+    
+    kppm.10.subs = kppm(
+      X = ow.ppp.10, 
+      trend = ~ elev + channel_dist_s5 + ,
+      clusters="Thomas",
+      data=im.list.10,
+      rmax=1000,
+      method = "palm",
+      improve.type = "quasi")
+  }
+  {  
+    kppm.10
+    kppm.10 |> summary()
+    kppm.10 |> plot()
+  }
 }
