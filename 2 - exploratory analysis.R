@@ -16,14 +16,28 @@
   dat.10 <- terra::rast("clean_data/joindat_10_800_50.tif")
   dat.30 <- terra::rast("clean_data/joindat_30_800_50.tif")
   ow.pts <- terra::vect("clean_data/ow_pts_clean.shp")
+  
+  test.ind = which(ow.pts$year >= 2018)
+  ow.pts.train = ow.pts[-test.ind, ]
+  ow.pts.test = ow.pts[test.ind, ]
+  
   #ow.pts <- terra::vect("mid_data/wilt/ow_pts_comb.shp")
   source("functions/construct_ppp_.R")
   ow.ppp.10 <- construct_ppp_(dat.10, ow.pts, T)
   ow.ppp.30 <- construct_ppp_(dat.30, ow.pts, T)
-  rm(dat.10, dat.30, ow.pts)
-  gc()
+  
   saveRDS(ow.ppp.10, file="clean_data/ow_ppp_10.Rds")
   saveRDS(ow.ppp.30, file="clean_data/ow_ppp_30.Rds")
+  rm(ow.ppp.10, ow.ppp.30)
+  
+  train.ppp.10 = construct_ppp_(dat.10, ow.pts.train, T)
+  train.ppp.30 = construct_ppp_(dat.30, ow.pts.train, T)
+  saveRDS(train.ppp.10, file="clean_data/train_ppp_10.Rds")
+  saveRDS(train.ppp.30, file="clean_data/train_ppp_30.Rds")
+  
+  rm(list=ls())
+  gc()
+  
 }
 ##
 { ##### 1 - Inhomogeneous L-function : estimate + gradient #### 

@@ -4,18 +4,18 @@
 #' 1 - compute possible threshold values
 #' 2 - loop over threshold values and compute precision + recall stats
 #'
-prec_rec_fun <- function(mod_pred_tbl, scale_bool, scale_px, scale_wilt, DEBUG) {
+prec_rec_fun_ <- function(mod_pred_tbl, DEBUG) {
   
   # 1 - compute possible threshold values and other stats
   #
   min.pred <- min(mod_pred_tbl$pred); max.pred <- max(mod_pred_tbl$pred) # get min and max pred values
   thresh.v <- seq(from=min.pred, to=max.pred, length.out=300) # construct vector of 300 threshold vals btw min and max
   
-  if(DEBUG){cat(paste0("\npopulating threshold values..."))} # debug print
+  if(DEBUG){cat(paste0("\n\t\tpopulating threshold values..."))} # debug print
   if(DEBUG){cat(paste0("\n\t\tmin pred : ", min.pred, "\tmax pred : ", max.pred))} # debug print
-  
-  wilt.ct <- mod_pred_tbl %>% # calc total # wilt in model prediction tibble
-    filter(wilt>=1) %>%  
+  #browser()
+  wilt.ct <- mod_pred_tbl |>  # calc total # wilt in model prediction tibble
+    filter(wilt >=1 ) %>%  
     summarise(wilt.ct = sum(wilt)) %>% 
     as.numeric()
   
@@ -24,15 +24,9 @@ prec_rec_fun <- function(mod_pred_tbl, scale_bool, scale_px, scale_wilt, DEBUG) 
     summarise(wilt.n.px = n()) %>% 
     as.numeric()
   
-  if(scale_bool) { # for calculating % of study area surveyed
-    n.total <- scale_px # if scale=T set n.total to scale_px
-    wilt.ct <- scale_wilt
-  } else {
     n.total <- nrow(mod_pred_tbl) # otherwise n.total <- # pixels in model prediction tibble
-  }
   
   if(DEBUG) {cat(paste0("\n\ttotal # wilt cases = ", wilt.ct, " \t in ", wilt.n.px, " pixels."))}
-  if(DEBUG) {cat(paste0("\n\tscale_bool is : ", scale_bool, " n.total = ", n.total))}
   #
   # 2 - compute precision/recall stats
   #
