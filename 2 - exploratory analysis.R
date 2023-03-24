@@ -96,9 +96,8 @@
       labs(title="Gradient empirical L-function, smoothed with span=0.20", x="r", y="L(r)") +
       theme(plot.title = element_text(size=20))
 }
-
 ##
-{ ##### 2 - inhomogeneous L-function simulation envelope
+{ ##### 2 - inhomogeneous L-function simulation envelope ##### 
   ow.ppp.10 <- readRDS("clean_data/ow_ppp_10.Rds")
   lam <- readRDS("clean_data/density/dens_bw_80.Rds")
   E <- envelope(ow.ppp.10, Linhom, sigma=124, correction=c("bord.modif", "translation"),
@@ -106,7 +105,6 @@
                 use.theory=T, nsim=3, global=T)
   plot(E, . - r ~ r)
 }
-
 ##
 { ##### 2 - generate densities across bw values #### 
   #

@@ -2,12 +2,12 @@ require(mgcv)
 require(spatstat)
 source("functions/mod/map_wilt_.R")
 source("functions/mod/prec_rec_fun_.R")
-#' Takes a list of model objects; a vector with 1 for GAM, 2 for CPM; a list with model input data
+#' Takes a list of model objects; a vector with 1 for GAM, 2 for CPM; a vector with resolution; a list with model input data
 #'
 #' 1. form prediction tibble
 #' 2. extract test.pts to prediction tibble
 #'
-compare_models_tbl_ <- function(model_list, model_vect, model_in_data, verbose, DBG) {
+compare_models_tbl_ <- function(model_list, model_vect, grid_vect, model_in_data, verbose, DBG) {
   # init tibble to store results
   tbl.tmp <- tibble() 
   
@@ -15,22 +15,37 @@ compare_models_tbl_ <- function(model_list, model_vect, model_in_data, verbose, 
   for(i in seq_along(model_list) ) { 
     if(DBG) cat(paste0("\nmodel ", i))
     
-    # extract model object & dbg print
+    # extract model object, info, & dbg print
     mod <- model_list[[i]]
     mod.type = model_vect[i]
     mod.name <- names(model_list)[i]
-    if(verbose) {cat(paste0("\n\tmod name: ", mod.name, "\n\tcomputing model predictions..."))}
+    mod.grid = grid_vect[i]
+    if(verbose) {cat(paste0("\n\tmod name: ", mod.name, "  on grid: ", mod.grid, "-m", "\n\tcomputing model predictions..."))}
 
     # GAM branch
     if(mod.type == 1) { 
       if(DBG)cat(paste0("\n\tGAM branch"))
-      # predict
+      
+      # predict -> tibble
       pred.tmp = mgcv::predict.bam(mod) |>  
         as_tibble() |>  
-        rename(raw_pred=value) |> 
-        add_column(x = model_in_data[["GAM data"]][["x"]],
-                   y = model_in_data[["GAM data"]][["y"]],
-                   wilt = model_in_data[["GAM data"]][["wilt_test"]])
+        rename(raw_pred=value) 
+      
+      # 30-m branch
+      if(mod.grid == 30) {
+        pred.tmp = pred.tmp |> # add missing spatial info & wilt test (validation points)
+          add_column(x = model_in_data[["GAM data 30"]][["x"]],
+                     y = model_in_data[["GAM data 30"]][["y"]],
+                     wilt = model_in_data[["GAM data 30"]][["wilt_test"]])
+        
+      # 10-m branch
+      } else if(mod.grid == 10) {
+        pred.tmp = pred.tmp |> # add missing spatial info & wilt test (validation points)
+          add_column(x = model_in_data[["GAM data 10"]][["x"]],
+                     y = model_in_data[["GAM data 10"]][["y"]],
+                     wilt = model_in_data[["GAM data 10"]][["wilt_test"]])
+      }
+        
       
       # convert raw to predict, scale by max
       if(str_detect(mod.name, "logit")) {
@@ -46,7 +61,12 @@ compare_models_tbl_ <- function(model_list, model_vect, model_in_data, verbose, 
     # CPM branch
     } else {
       if(DBG)cat(paste0("\n\tCPM branch"))
-      quad.tmp = model_in_data[["quads"]]
+      if(mod.grid == 30) {
+        quad.tmp = model_in_data[["quads 30"]]
+      } else if(mod.grid == 10) {
+        quad.tmp = model_in_data[["quads 10"]]
+      }
+      
       # predict
       if(DBG)cat(paste0("\n\t\tpredicting..."))
       pred.tmp = predict(mod, locations = quad.tmp[["dummy"]]) |>  
@@ -56,8 +76,13 @@ compare_models_tbl_ <- function(model_list, model_vect, model_in_data, verbose, 
         add_column(y = quad.tmp[["dummy"]][["y"]]) |> 
         mutate(pred = raw_pred/max(raw_pred, na.rm=T)) |> 
         select(x, y, pred)
-      if(i == 3) browser()
-      pred.tmp = map_wilt_(pred.tmp, DBG=T)
+      #if(i == 3) browser()
+      if(mod.grid == 30) {
+        pred.tmp = map_wilt_30_(pred.tmp, DBG=T)
+      } else if (mod.grid == 10) {
+        pred.tmp = map_wilt_10_(pred.tmp, DBG=T)
+      }
+      
     }
     prec.rec.tmp = prec_rec_fun_(pred.tmp, DEBUG=T)
     
