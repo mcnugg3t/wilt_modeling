@@ -4,7 +4,7 @@
 {
   rm(list=ls())
   gc()
-  library(spatstat)
+  #library(spatstat)
   library(terra)
   library(tidyverse)
   library(assertthat)

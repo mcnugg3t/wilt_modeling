@@ -17,19 +17,25 @@
   terra::writeVector(sa.poly, file="plt_data/sa_poly.shp")
 }
 
-#--------------- Fig 2 - Loh boot --------------
+#--------------- Fig 2 - Besag's L(r) --------------
 {
-  L.res = readRDS("clean_data/exploratory/L_bootstrap.Rds")
-  Lres.dat <- L.res |> 
-    as.data.frame() |> 
-    mutate(grad.L = (trans-lag(trans))/(r - lag(r)),
-           grad.L.theo = (theo - lag(theo))/(r-lag(r)),
-           grad.lo = (lo-lag(lo))/(r-lag(r)),
-           grad.hi = (hi-lag(hi))/(r-lag(r))) 
-  Lres.dat  
+  { #### Setup ####
+    library(spatstat)
+    L.res = readRDS("clean_data/exploratory/L_bootstrap.Rds")
+    Lres.dat <- L.res |> 
+      as.data.frame() |> 
+      mutate(grad.L = (trans-lag(trans))/(r - lag(r)),
+             grad.L.theo = (theo - lag(theo))/(r-lag(r)),
+             grad.lo = (lo-lag(lo))/(r-lag(r)),
+             grad.hi = (hi-lag(hi))/(r-lag(r)))
+    Lres.dat |> str()
+  }
+  
+   
+    
   
   Lres.dat |> 
-    filter(r < 1000) |> 
+    filter(r < 3000) |> 
     ggplot() + 
     geom_ribbon(aes(x=r, ymin=lo, ymax=hi), fill="gray") +
     geom_line(aes(x=r, y=trans), color="black", linewidth=1.5) +
@@ -38,14 +44,44 @@
     theme(axis.title = element_text(size=32), axis.text = element_text(size=24))
   
   Lres.dat |> 
-    filter(r < 1000) |> 
+    filter(r < 475) |> 
     ggplot() +
     geom_point( aes(x=r, y=grad.L), alpha=0.1 ) +
-    geom_smooth( aes(x=r, y=grad.L), method="loess", span=0.35, linewidth = 1.5 ) +
+    geom_smooth( aes(x=r, y=grad.L), method="loess", span=0.4, linewidth = 1.5 ) +
     geom_line(aes(x=r, y=grad.L.theo), linewidth = 1.2, color="red", linetype="dashed") +
-    labs(x="r", y="L'(r)") +
+    labs(x="r (m)", y="L'(r)") +
     ylim(0, 5) +
     theme(axis.title = element_text(size=32), axis.text = element_text(size=24))
+  
+  # check grad over full extent
+  Lres.dat |> 
+    filter(r < 3000) |> 
+    mutate(`r (km)` = r/1000) |> 
+    ggplot() +
+    geom_point( aes(x=`r (km)`, y=grad.L), alpha=0.1 ) +
+    geom_smooth( aes(x=`r (km)`, y=grad.L), method="loess", span=0.35, linewidth = 1.5 ) +
+    geom_line(aes(x=`r (km)`, y=grad.L.theo), linewidth = 1.2, color="red", linetype="dashed") +
+    ylim(0.5, 4) +
+    labs(x="r (km)", y="L'(r)") +
+    theme(axis.title = element_text(size=32), axis.text = element_text(size=24))
+  
+  Lres.dat |> 
+    mutate(`Cluster Size` = if_else( ((r < 150) & (r > 50)), "50 to 150-m", 
+                            if_else( ((r < 1750) & (r > 1000)), "1 to 1.75 km", "REMOVE")),
+           `Cluster Size` = as.factor(`Cluster Size`)
+          ) |> 
+    filter(`Cluster Size` != "REMOVE") |> 
+    ggplot() +
+    geom_boxplot(aes(x=`Cluster Size`, y=grad.L))
+  
+  Lres.dat |> 
+    filter(r < 150, r > 50) |> 
+    summarise(mean_grad = mean(grad.L, na.rm=T))
+  
+  Lres.dat |> 
+    filter(r < 1750, r > 1000) |> 
+    summarise(mean_grad = mean(grad.L, na.rm=T))
+  
   library(spatstat)
   ow.ppp = readRDS("clean_data/ow_ppp_10.Rds")
   fryplot(ow.ppp, dmax=1000, axes=T)
@@ -95,7 +131,7 @@
   
   # FIG 3 C
   compare.res |> # compare kppm models with ha2 models
-    filter(Model %in% c("GAM HA2 30-m", "CPM HA1 30-m", "CPM H0 30-m")) |> 
+    filter(Model %in% c("GAM HA2 30-m", "GAM HA2 10-m", "CPM HA1 30-m", "CPM H0 30-m")) |> 
     pivot_wider(id_cols=1:2, names_from=measure, values_from=val) |>
     ggplot(aes(x=area_surveyed, y=recall, color=Model)) + 
     geom_line(linewidth=1.2) + 
@@ -126,7 +162,7 @@
           axis.text = element_text(size=24),
           legend.title = element_text(size=32),
           legend.text = element_text(size=24))
-  
+  # Fig 3 B
   compare.res |> # compare GAMs to one another
     filter(Model %in% gam.names) |> 
     #filter(mod_name %in% gam.names) |> 
@@ -142,10 +178,35 @@
           axis.text = element_text(size=24),
           legend.title = element_text(size=32),
           legend.text = element_text(size=24)) + xlim(0, 0.03) + ylim(0, 0.175)
+  
+  compare.res |> # compare GAMs to one another
+    filter(Model %in% gam.names) |> 
+    filter(Model %in% c("GAM HA2 30-m", "GAM H0 10-m", "GAM H0 30-m")) |> 
+    pivot_wider(id_cols=1:2, names_from=measure, values_from=val) |>
+    ggplot(aes(x=area_surveyed, y=recall, color=Model)) + 
+    geom_line(linewidth=1.2) + 
+    scale_colour_viridis_d(option = "A") +
+    #scale_color_brewer(type="qual", palette="RdBu") +
+    labs(x="Proportion of study area", y="Recall") +
+    theme(axis.title = element_text(size=32),
+          axis.text = element_text(size=24),
+          legend.title = element_text(size=32),
+          legend.text = element_text(size=24)) + xlim(0, 0.10) + ylim(0, 0.4)
+  
+  compare.res |> # compare kppm models with ha2 models
+    filter(Model %in% c("GAM HA2 30-m", "GAM HA2 10-m", "GAM H0 10-m", "GAM H0 30-m")) |> 
+    pivot_wider(id_cols=1:2, names_from=measure, values_from=val) |>
+    ggplot(aes(x=area_surveyed, y=recall, color=Model)) + 
+    geom_line(linewidth=1.2) + 
+    scale_color_brewer(type="div", palette="RdBu") +
+    labs(x="Proportion of study area", y="Recall") +
+    theme(axis.title = element_text(size=32),
+          axis.text = element_text(size=24),
+          legend.title = element_text(size=32),
+          legend.text = element_text(size=24))
+  
 }
-
 #--------------- Fig 4--------------
-#--------------- Fig 5--------------
 {
   {
     rm( list=ls() )
@@ -157,26 +218,115 @@
   
   {
     mod.10 = readRDS("E:/tmp/wilt_models/gam_10_h0_logit.Rds")
-    dat.10 = readRDS("mod_data/model_in/dat_10_weighted.Rds")
+    dat.10 = readRDS("mod_data/model_in/dat_10_weighted.Rds") |> 
+      select(-c(17:23))
+    dat.10 |> str()
     dev.resid.10 = mgcv::residuals.gam(mod.10, type="deviance")
-    pear.resid.10 = mgcv::residuals.gam(mod.10, type="pearson")
-    dat.10 = dat.10 |> 
+    
+    resid.dat.10 = dat.10 |> 
       add_column(resid_deviance = dev.resid.10,
-                 resid_pearson = pear.resid.10,
                  fitted = mod.10$fitted.values) |> 
-      mutate(resid_deviance_contrast = log(log(log(log(log(log(resid_deviance + 1)+1)+1)+1)+1)+1) )
+      group_by(ow_rast_10) |> 
+      mutate(dev_scale = scale(resid_deviance)) |> 
+      ungroup() |> 
+      rename(Elevation = elev) |> 
+      mutate(Elevation = (Elevation*attr(Elevation, "scaled:scale")) + attr(Elevation, "scaled:center") ) |> 
+      mutate(channel_dist_s5 = (channel_dist_s5*attr(channel_dist_s5, "scaled:scale")) + attr(channel_dist_s5, "scaled:center") ) |>
+      mutate(val_depth = (val_depth*attr(val_depth, "scaled:scale")) + attr(val_depth, "scaled:center") ) |>
+      mutate(bin_resp = if_else(ow_rast_10 > 0, "case", "control") )
+    # unscale variables
+    #for(i in )
+  }
+  # for each covar, plot residual vs covar
+  for(i in 4:ncol(dat.10)) {
+    covar.tmp = names(resid.dat.10)[i]
+    cat(paste0("\ni = ", i, "\t", covar.tmp))
+    p1 = resid.dat.10 |> 
+      ggplot(aes_string("x" = covar.tmp, "y" = "dev_scale")) + 
+      geom_hex() + 
+      facet_wrap(~bin_resp)
+    p1 |> plot()
+    cat("\n\tany key for next")
+    prpt = readline(prompt="...")
   }
   
-  g1 = getViz(mod.10)
-  check(g1,
-        type="deviance"
-        )
-  dat.10 |> filter(resid_deviance > 1) |> ggplot(aes(x=fitted, y=resid_deviance)) + geom_hex() +
+  # for each quantile of fitted value, calc disease incidence
+  resid.dat.10 |> 
+    mutate(fitted_ntile = ntile(fitted, 10)) |> 
+    group_by(fitted_ntile) |> 
+    summarise(ow_rate = sum(ow_rast_10)/n() ) |> 
+    #mutate(ow_rate = ow_rate / max(ow_rate)) |> 
+    ggplot(aes(x=fitted_ntile, y=ow_rate)) + geom_line(linewidth=2) + labs(x="fitted value decile", y="disease rate") + theme(
+      axis.text = element_text(size=24),
+      axis.title = element_text(size=32),
+      legend.title = element_text(size=24),
+      legend.text = element_text(size=18))
+  
+  resid.dat.10 |> 
+    filter(ow_rast_10 < 1) |> 
+    ggplot(aes(x=Elevation, y=resid_deviance)) + geom_hex()
+  
+  # Fig 4A
+  resid.dat.10 |> 
+    filter(ow_rast_10 > 1) |> 
+    ggplot(aes(x=fitted, y=resid_deviance)) + 
+      geom_jitter() +
+    labs(x="fitted value", y = "Deviance residual") +
+      theme(
+        axis.text = element_text(size=24),
+        axis.title = element_text(size=32),
+        legend.title = element_text(size=24),
+        legend.text = element_text(size=18))
+  
+  resid.dat.10 |> 
+    filter(ow_rast_10 < 1) |> 
+    ggplot(aes(x=fitted, y=resid_deviance)) + 
+    geom_hex() +
     theme(
       axis.text = element_text(size=24),
       axis.title = element_text(size=32),
       legend.title = element_text(size=24),
       legend.text = element_text(size=18))
+  
+  no.ow.dat = resid.dat.10 |> 
+    filter(ow_rast_10 < 1) |> 
+    rename(`Deviance scaled` = dev_scale)
+  
+  
+  
+  ow.pts.dat = resid.dat.10 |> 
+    filter(ow_rast_10 > 0) |> 
+    rename(`Deviance scaled` = dev_scale) 
+  
+  # Fig 4_
+  ggplot() + 
+    geom_tile(data=no.ow.dat, aes(x=x,y=y,fill=`Deviance scaled`)) + 
+    scale_fill_gradient(low="darkblue", high="white") +
+    geom_point(data=ow.pts.dat, aes(x=x,y=y), color="red", alpha=0.2) + theme(
+      axis.text = element_text(size=24),
+      axis.title = element_text(size=32),
+      legend.title = element_text(size=24),
+      legend.text = element_text(size=18))
+    
+  
+  # Fig 4_
+  ggplot() + 
+    geom_tile(data=resid.dat.10, aes(x=x,y=y, fill=Elevation)) + 
+    scale_fill_gradient(low="white", high="black") +
+    geom_point(data = ow.pts.dat, aes(x=x,y=y, color = `Deviance scaled`, alpha=`Deviance scaled`), size=2) + 
+    scale_color_gradient(low="lightgreen", high="red") +
+    theme(
+      axis.text = element_text(size=24),
+      axis.title = element_text(size=32),
+      legend.title = element_text(size=24),
+      legend.text = element_text(size=18))
+  
+  g1 = getViz(mod.10)
+  check(g1,
+        type="deviance"
+        )
+  
+  
   
   
   names.tmp = dat.10 |> names()
@@ -456,4 +606,13 @@ ow.pts = terra::vect("clean_data/ow_pts_clean.shp")
   dat.30$sand |> plot(main="Soil Sand (%)")
   points(ow.pts, cex=0.5, col="red", alpha=0.2)
 }
-
+{
+  mod.pth = "E:/tmp/wilt_models/train_test/"
+  kppm_30_cauch_pq = readRDS( paste0(mod.pth, "train_kppm_30_pq_cauch.Rds") )
+  kppm_ha1 = readRDS( paste0(mod.pth, "tkppm_ha2_wc_cauch.Rds") )
+  pred.h0 = kppm_30_cauch_pq |> predict() |> as.data.frame() |> terra::rast(type="xyz", crs=crs('EPSG:3071'))
+  terra::writeRaster(pred.h0, filename="img/kppm_30_h0_pred.tif")
+  
+  pred.ha1 = kppm_ha1 |> predict() |> as.data.frame() |> terra::rast(type="xyz", crs=crs('EPSG:3071'))
+  terra::writeRaster(pred.ha1, filename="img/kppm_30_ha1_pred.tif")
+}
